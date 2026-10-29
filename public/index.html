@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SPUN Learning Hub</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="app">
+    <aside class="sidebar" id="sidebar" aria-label="Sidebar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">S</span><span>Learning Hub</span></div>
+      <nav class="nav" id="nav" aria-label="Main"></nav>
+      <div class="user-box" id="userBox"></div>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+    <div class="content">
+      <header class="topbar">
+        <button class="icon-btn" id="menuBtn" type="button" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false">&#9776;</button>
+        <p class="page-title" id="pageTitle">Learning Hub</p>
+      </header>
+      <main id="main" tabindex="-1" aria-live="polite"></main>
+    </div>
+  </div>
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+  <div class="gate" id="gate" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>
