@@ -12,7 +12,7 @@ Browser ──(login, undangan, reset)──▶ Supabase Auth
 
 ## Fitur
 
-**Peserta:** dashboard, course & modul (teks, gambar, video YouTube), quiz dengan skor dihitung server, Knowledge Center, bookmark, progres per akun.
+**Peserta:** dashboard, course & modul (teks, gambar, video YouTube), quiz dengan skor dihitung server, Knowledge Center, bookmark, progres per akun. Detail course, modul, quiz, dan artikel tampil sebagai halaman penuh dengan alamat sendiri (bisa di-refresh, di-bookmark, dan memakai tombol Back), contoh: `#course/cx`, `#learn/cx/2`, `#quiz/cx-quiz`, `#knowledge/empathy`.
 
 **Admin** (menu *Admin panel* di sidebar, hanya untuk akun ber-role admin):
 - **Materi** — buat/edit course, modul, quiz, dan artikel. Perubahan tersimpan sebagai *draft*; peserta hanya melihat versi yang sudah di-*publish*. Unggah gambar, tempel link YouTube, pratinjau, urutkan, sembunyikan, hapus.

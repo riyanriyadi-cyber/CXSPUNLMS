@@ -48,7 +48,8 @@
   function toast(text, bad = false) {const t = $('#toast'); t.textContent = text; t.classList.toggle('toast-bad', bad); t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 4200);}
   function showModal(title, html, wide = false) {
     $('#modal-content').innerHTML = `<header class="modal-header"><h2 id="modal-title">${esc(title)}</h2><button class="icon-button" data-act="close-modal" aria-label="Tutup">✕</button></header><div class="modal-body">${html}</div>`;
-    modal.classList.toggle('modal-wide', wide);
+    modal.classList.toggle('modal-wide', wide === true);
+    modal.classList.toggle('modal-full', wide === 'full');
     if (!modal.open) modal.showModal();
   }
   const closeModal = () => {if (modal.open) modal.close();};
@@ -395,12 +396,13 @@
         case 'upload-image': await uploadImage(b.dataset.path, b); break;
         case 'remove-image': setPath(d, b.dataset.path + '.image', undefined); markDirty(); renderEditor(); break;
         case 'preview-lesson': {
-          const l = d.lessons[b.dataset.i];
-          showModal('Pratinjau modul', `<article class="lesson-content"><div class="modal-kicker">${esc(d.category)} · ${Number(l.duration) || 0} menit</div><h3>${esc(l.title || 'Modul tanpa judul')}</h3>${l.intro ? `<p class="lead">${esc(l.intro)}</p>` : ''}${previewSections(l.sections)}<p class="sample-note">Pratinjau draft — belum tentu sama dengan yang sedang tayang.</p></article>`, true);
+          const i = Number(b.dataset.i), l = d.lessons[i];
+          const outline = `<aside class="learn-outline"><div class="outline-head"><span class="back-link">Pratinjau draft</span><h2>${esc(d.title || 'Course tanpa judul')}</h2></div><ol class="outline-list">${d.lessons.map((x, j) => `<li><button type="button" class="outline-item ${j === i ? 'current' : ''}" data-act="preview-lesson" data-i="${j}"><span class="outline-dot">${j + 1}</span><span>${esc(x.title || 'Modul tanpa judul')}<small>${Number(x.duration) || 0} menit</small></span></button></li>`).join('')}</ol></aside>`;
+          showModal('Pratinjau modul — tampilan peserta', `<div class="preview-stage"><div class="learn-layout">${outline}<article class="learn-main lesson-content"><div class="modal-kicker">${esc(d.category)} · Modul ${i + 1} dari ${d.lessons.length} · ${Number(l.duration) || 0} menit</div><h1 class="learn-title">${esc(l.title || 'Modul tanpa judul')}</h1>${l.intro ? `<p class="lead">${esc(l.intro)}</p>` : ''}${previewSections(l.sections)}<div class="lesson-actions"><span class="sample-note">Pratinjau draft — peserta baru melihatnya setelah Publish.</span></div></article></div></div>`, 'full');
           break;
         }
         case 'preview-article':
-          showModal('Pratinjau artikel', `<article class="article-reader"><div class="modal-kicker">${esc(d.category)}</div><h3>${esc(d.title)}</h3><p class="reader-lead">${esc(d.description)}</p>${previewSections(d.sections)}<p class="sample-note">Pratinjau draft — belum tentu sama dengan yang sedang tayang.</p></article>`, true);
+          showModal('Pratinjau artikel — tampilan peserta', `<div class="preview-stage"><div class="page-narrow"><article class="article-reader page-card"><div class="modal-kicker">${esc(d.category)}</div><h1>${esc(d.title)}</h1><div class="reader-meta"><span>SPUN Learning Team</span><span>${Number(d.minutes) || 0} menit baca</span></div><p class="reader-lead">${esc(d.description)}</p>${previewSections(d.sections)}<p class="sample-note">Pratinjau draft — peserta baru melihatnya setelah Publish.</p></article></div></div>`, 'full');
           break;
         case 'invite': inviteDialog(); break;
         case 'user-detail': await userDetail(b.dataset.id); break;
