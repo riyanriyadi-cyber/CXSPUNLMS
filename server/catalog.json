@@ -1,0 +1,759 @@
+{
+  "courses": [
+    {
+      "id": "cx",
+      "title": "Delivering Exceptional Customer Experience",
+      "category": "Customer Experience",
+      "label": "CUSTOMER EXPERIENCE",
+      "description": "Bangun pengalaman pelanggan yang berkesan, dari percakapan pertama hingga solusi terakhir.",
+      "color": "peach",
+      "art": "conversation",
+      "level": "Fundamental",
+      "minutes": 45,
+      "author": "Learning & Development",
+      "progress": 2,
+      "lessons": [
+        {
+          "title": "Memahami customer experience",
+          "duration": 8,
+          "intro": "Pengalaman pelanggan dibentuk oleh setiap interaksi, termasuk ketika pelanggan sedang menunggu jawaban.",
+          "sections": [
+            [
+              "Lihat perjalanan secara utuh",
+              "Customer experience mencakup sebelum, selama, dan setelah layanan. Gunakan sudut pandang pelanggan untuk menemukan momen yang membingungkan atau membuat mereka perlu bertanya ulang."
+            ],
+            [
+              "Kenali kebutuhan di balik pertanyaan",
+              "Pertanyaan tentang status dapat menunjukkan kebutuhan akan kepastian. Selain memberikan status terakhir yang terverifikasi, jelaskan langkah berikutnya dan kapan pembaruan akan diberikan."
+            ],
+            [
+              "Latihan singkat",
+              "Pilih satu percakapan yang pernah kamu tangani. Catat kebutuhan pelanggan, respons yang diberikan, dan satu hal yang dapat membuat pengalaman itu lebih mudah."
+            ]
+          ]
+        },
+        {
+          "title": "Mengenal customer journey",
+          "duration": 7,
+          "intro": "Petakan perjalanan pelanggan untuk memahami titik kontak dan hambatan yang mereka alami.",
+          "sections": [
+            [
+              "Mulai dari tujuan pelanggan",
+              "Tuliskan hasil yang ingin dicapai pelanggan, kemudian urutkan tahap yang mereka lalui. Catat pertanyaan, emosi, dan informasi yang dibutuhkan pada setiap tahap."
+            ],
+            [
+              "Temukan titik friksi",
+              "Perhatikan informasi yang harus disampaikan berulang, perpindahan tim tanpa konteks, dan langkah yang tidak jelas. Tentukan satu perbaikan kecil yang bisa diuji."
+            ]
+          ]
+        },
+        {
+          "title": "Empati dalam setiap percakapan",
+          "duration": 10,
+          "intro": "Empati membantu pelanggan merasa didengar. Mulailah dengan memahami konteks sebelum menawarkan solusi.",
+          "sections": [
+            [
+              "Dengarkan dan validasi",
+              "Baca percakapan secara utuh. Akui dampak situasinya secara spesifik tanpa membuat asumsi tentang perasaan pelanggan. Contoh: “Saya memahami kepastian jadwal ini penting untuk persiapan Kakak.”"
+            ],
+            [
+              "Jelaskan tindakan yang nyata",
+              "Sampaikan apa yang akan diperiksa, siapa yang akan menindaklanjuti, dan kapan kamu akan memberi kabar. Hindari janji hasil yang berada di luar kendali tim."
+            ],
+            [
+              "Coba terapkan",
+              "Pelanggan sudah bertanya dua kali tentang status. Susun respons yang berisi pengakuan atas situasi, status yang telah diverifikasi, serta langkah dan waktu pembaruan berikutnya."
+            ]
+          ]
+        },
+        {
+          "title": "Mengelola ekspektasi pelanggan",
+          "duration": 10,
+          "intro": "Ekspektasi yang jelas mengurangi kebingungan dan membantu membangun kepercayaan.",
+          "sections": [
+            [
+              "Pisahkan fakta dan estimasi",
+              "Sampaikan apa yang sudah terkonfirmasi dan apa yang masih berupa perkiraan. Jangan mengubah estimasi menjadi janji pasti."
+            ],
+            [
+              "Beri pembaruan yang berguna",
+              "Saat belum ada perubahan, jelaskan apa yang masih ditunggu dan tindakan yang sedang dilakukan. Sepakati waktu pembaruan yang realistis sesuai prosedur tim."
+            ]
+          ]
+        },
+        {
+          "title": "Menutup percakapan dengan baik",
+          "duration": 10,
+          "intro": "Penutupan yang baik memastikan pelanggan mengetahui hasil dan langkah berikutnya.",
+          "sections": [
+            [
+              "Rangkum hasil",
+              "Sebutkan solusi atau status akhir secara ringkas. Pastikan pertanyaan utama terjawab dan tanyakan apakah masih ada hal yang perlu dibantu."
+            ],
+            [
+              "Catat untuk tindak lanjut",
+              "Dokumentasikan inti kendala, tindakan, komitmen pembaruan, dan penanggung jawab. Gunakan prosedur internal yang berlaku sebagai acuan."
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "communication",
+      "title": "Komunikasi Efektif & Active Listening",
+      "category": "Communication",
+      "label": "COMMUNICATION",
+      "description": "Dengarkan lebih baik, sampaikan lebih jelas, dan bangun percakapan yang bermakna.",
+      "color": "sage",
+      "art": "listening",
+      "level": "Fundamental",
+      "minutes": 35,
+      "author": "Learning & Development",
+      "progress": 1,
+      "lessons": [
+        {
+          "title": "Dasar active listening",
+          "duration": 8,
+          "intro": "Active listening adalah upaya memahami pesan sebelum menyusun jawaban.",
+          "sections": [
+            [
+              "Berikan perhatian penuh",
+              "Baca semua konteks yang tersedia dan hindari menyela. Pisahkan fakta yang disampaikan pelanggan dari interpretasimu."
+            ],
+            [
+              "Konfirmasi pemahaman",
+              "Rangkum kebutuhan pelanggan dengan bahasamu sendiri, lalu minta konfirmasi jika ada bagian yang belum jelas."
+            ]
+          ]
+        },
+        {
+          "title": "Bertanya dengan tepat",
+          "duration": 9,
+          "intro": "Pertanyaan yang tepat membantu menemukan masalah tanpa membuat pelanggan mengulang informasi.",
+          "sections": [
+            [
+              "Mulai dengan pertanyaan terbuka",
+              "Gunakan pertanyaan terbuka untuk memahami konteks, kemudian pertanyaan spesifik untuk mengonfirmasi detail yang relevan."
+            ],
+            [
+              "Gunakan informasi yang sudah ada",
+              "Periksa catatan sebelumnya. Jelaskan alasan jika kamu perlu meminta ulang informasi tertentu."
+            ]
+          ]
+        },
+        {
+          "title": "Bahasa yang jelas dan ramah",
+          "duration": 9,
+          "intro": "Bahasa sederhana membantu pelanggan memahami tindakan berikutnya.",
+          "sections": [
+            [
+              "Hindari jargon",
+              "Ganti istilah internal dengan penjelasan yang mudah dipahami. Pecah instruksi panjang menjadi langkah-langkah singkat."
+            ],
+            [
+              "Utamakan kejelasan",
+              "Sebutkan tindakan, penanggung jawab, dan waktu pembaruan. Gunakan nada ramah tanpa mengaburkan informasi penting."
+            ]
+          ]
+        },
+        {
+          "title": "Latihan respons pelanggan",
+          "duration": 9,
+          "intro": "Gabungkan mendengarkan, klarifikasi, dan respons yang terarah.",
+          "sections": [
+            [
+              "Skenario latihan",
+              "Pelanggan menyampaikan bahwa instruksi sebelumnya membingungkan. Tulis respons yang mengakui kendala, memeriksa pemahaman, dan menyederhanakan langkah berikutnya."
+            ],
+            [
+              "Evaluasi mandiri",
+              "Apakah respons menjawab kebutuhan utama? Apakah ada janji yang belum bisa dipastikan? Apakah instruksinya mudah diikuti?"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "service",
+      "title": "Service Quality: From Good to Great",
+      "category": "Service Quality",
+      "label": "SERVICE QUALITY",
+      "description": "Ubah insight quality assurance menjadi perbaikan layanan yang konsisten.",
+      "color": "lavender",
+      "art": "quality",
+      "level": "Intermediate",
+      "minutes": 40,
+      "author": "Learning & Development",
+      "progress": 0,
+      "lessons": [
+        {
+          "title": "Fondasi kualitas layanan",
+          "duration": 10,
+          "intro": "Kualitas layanan dibangun dari akurasi, kejelasan, empati, dan konsistensi.",
+          "sections": [
+            [
+              "Gunakan bukti yang spesifik",
+              "Nilai perilaku yang terlihat pada percakapan. Hubungkan feedback dengan contoh agar agent memahami apa yang perlu dipertahankan atau diperbaiki."
+            ],
+            [
+              "Ikuti standar tim",
+              "Gunakan rubric QA yang telah disetujui tim. Materi demo ini tidak menggantikan rubric atau kebijakan internal."
+            ]
+          ]
+        },
+        {
+          "title": "Menemukan akar masalah",
+          "duration": 10,
+          "intro": "Temukan penyebab di balik pola kesalahan, bukan hanya gejalanya.",
+          "sections": [
+            [
+              "Periksa konteks",
+              "Kesalahan dapat terkait pemahaman, akses informasi, kejelasan proses, atau kapasitas kerja. Bandingkan beberapa contoh sebelum menarik kesimpulan."
+            ],
+            [
+              "Tentukan langkah perbaikan",
+              "Pilih tindakan yang sesuai dengan penyebab dan tentukan cara memeriksa hasilnya."
+            ]
+          ]
+        },
+        {
+          "title": "Coaching berbasis data",
+          "duration": 10,
+          "intro": "Coaching membantu agent memahami kesenjangan dan berlatih perilaku yang lebih efektif.",
+          "sections": [
+            [
+              "Bahas satu prioritas",
+              "Mulai dari contoh nyata, dengarkan perspektif agent, lalu sepakati target perilaku yang dapat diamati."
+            ],
+            [
+              "Tindak lanjuti",
+              "Tetapkan waktu evaluasi dan cek sampel baru. Berikan penguatan untuk perubahan yang sudah terlihat."
+            ]
+          ]
+        },
+        {
+          "title": "Membangun improvement plan",
+          "duration": 10,
+          "intro": "Rencana perbaikan membuat tujuan, tindakan, dan evaluasi menjadi jelas.",
+          "sections": [
+            [
+              "Buat rencana sederhana",
+              "Tulis masalah, bukti, target, tindakan, penanggung jawab, dan tanggal evaluasi."
+            ],
+            [
+              "Evaluasi dampaknya",
+              "Bandingkan sampel yang relevan sebelum dan sesudah tindakan, serta catat faktor lain yang mungkin memengaruhi hasil."
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "onboarding",
+      "title": "Welcome to SPUN: Start Your Journey",
+      "category": "Onboarding",
+      "label": "ONBOARDING",
+      "description": "Kenali ruang belajarmu dan siapkan kebiasaan belajar yang mendukung pekerjaan.",
+      "color": "blue",
+      "art": "journey",
+      "level": "Fundamental",
+      "minutes": 25,
+      "author": "Learning & Development",
+      "progress": 3,
+      "lessons": [
+        {
+          "title": "Mengenal Learning Hub",
+          "duration": 8,
+          "intro": "Learning Hub adalah ruang untuk menemukan materi, berlatih, dan menyimpan pengetahuan.",
+          "sections": [
+            [
+              "Mulai dari Dashboard",
+              "Lihat progres course, lanjutkan pembelajaran, dan temukan kuis yang tersedia."
+            ],
+            [
+              "Temukan materi",
+              "Gunakan pencarian atau kategori untuk memilih course dan artikel yang sesuai kebutuhan."
+            ]
+          ]
+        },
+        {
+          "title": "Merencanakan pembelajaran",
+          "duration": 9,
+          "intro": "Tujuan kecil yang konsisten membantu membangun kebiasaan belajar.",
+          "sections": [
+            [
+              "Pilih satu kebutuhan",
+              "Pilih keterampilan yang sering digunakan dalam pekerjaan. Tentukan waktu belajar yang realistis setiap minggu."
+            ],
+            [
+              "Terapkan hasil belajar",
+              "Setelah menyelesaikan materi, tulis satu tindakan yang ingin kamu coba dalam pekerjaan."
+            ]
+          ]
+        },
+        {
+          "title": "Belajar bersama tim",
+          "duration": 8,
+          "intro": "Diskusi membantu menghubungkan materi dengan situasi nyata.",
+          "sections": [
+            [
+              "Bagikan pembelajaran",
+              "Bawa satu contoh dan satu pertanyaan ke sesi diskusi tim."
+            ],
+            [
+              "Pastikan acuan terbaru",
+              "Untuk kebijakan dan prosedur operasional, gunakan dokumen internal yang telah disetujui dan diperbarui oleh pemilik proses."
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "documentation",
+      "title": "Case Documentation Essentials",
+      "category": "Service Quality",
+      "label": "SERVICE QUALITY",
+      "description": "Tulis catatan kasus yang jelas agar setiap tindak lanjut berjalan lebih mudah.",
+      "color": "sand",
+      "art": "documents",
+      "level": "Fundamental",
+      "minutes": 30,
+      "author": "Learning & Development",
+      "progress": 0,
+      "lessons": [
+        {
+          "title": "Catatan yang berguna",
+          "duration": 10,
+          "intro": "Catatan kasus membantu rekan tim memahami konteks tanpa meminta pelanggan mengulang.",
+          "sections": [
+            [
+              "Struktur sederhana",
+              "Catat kebutuhan, fakta, tindakan yang sudah dilakukan, status, dan langkah berikutnya."
+            ],
+            [
+              "Gunakan bahasa netral",
+              "Bedakan fakta dengan dugaan. Hindari penilaian pribadi tentang pelanggan."
+            ]
+          ]
+        },
+        {
+          "title": "Handover yang jelas",
+          "duration": 10,
+          "intro": "Handover yang baik membuat kepemilikan tindak lanjut tetap jelas.",
+          "sections": [
+            [
+              "Sertakan konteks utama",
+              "Sampaikan ringkasan kendala, bukti yang relevan, upaya penyelesaian, dan dukungan yang diperlukan."
+            ],
+            [
+              "Pastikan penerima",
+              "Gunakan jalur internal yang berlaku dan konfirmasi bahwa pemilik tindak lanjut telah ditentukan."
+            ]
+          ]
+        },
+        {
+          "title": "Pemeriksaan sebelum menutup kasus",
+          "duration": 10,
+          "intro": "Luangkan waktu untuk mengecek kelengkapan catatan.",
+          "sections": [
+            [
+              "Tiga pertanyaan pemeriksaan",
+              "Apakah statusnya jelas? Apakah pelanggan mengetahui langkah berikutnya? Apakah ada komitmen yang masih harus ditindaklanjuti?"
+            ],
+            [
+              "Jaga informasi pelanggan",
+              "Gunakan sistem yang disetujui perusahaan dan simpan hanya informasi yang relevan sesuai kebijakan internal."
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ownership",
+      "title": "Taking Ownership of Every Case",
+      "category": "Customer Experience",
+      "label": "CUSTOMER EXPERIENCE",
+      "description": "Bangun rasa tanggung jawab dan tindak lanjut yang dapat diandalkan.",
+      "color": "pink",
+      "art": "ownership",
+      "level": "Intermediate",
+      "minutes": 30,
+      "author": "Learning & Development",
+      "progress": 0,
+      "lessons": [
+        {
+          "title": "Memahami ownership",
+          "duration": 10,
+          "intro": "Ownership berarti memastikan setiap kasus memiliki langkah berikutnya yang jelas.",
+          "sections": [
+            [
+              "Ambil tanggung jawab atas tindak lanjut",
+              "Kamu tidak selalu bisa menyelesaikan semuanya sendiri, tetapi bisa memastikan konteks diteruskan dan pelanggan menerima pembaruan."
+            ],
+            [
+              "Hindari janji berlebihan",
+              "Komitmenkan tindakan yang berada dalam kendalimu. Konfirmasi hasil sebelum menyampaikannya."
+            ]
+          ]
+        },
+        {
+          "title": "Kolaborasi lintas tim",
+          "duration": 10,
+          "intro": "Kolaborasi yang baik dimulai dengan informasi yang lengkap.",
+          "sections": [
+            [
+              "Jelaskan kebutuhan bantuan",
+              "Sampaikan pertanyaan atau keputusan yang dibutuhkan secara spesifik."
+            ],
+            [
+              "Catat hasil koordinasi",
+              "Dokumentasikan keputusan dan penanggung jawab agar tindak lanjut tidak terlewat."
+            ]
+          ]
+        },
+        {
+          "title": "Follow-up yang konsisten",
+          "duration": 10,
+          "intro": "Pembaruan yang konsisten membantu menjaga kepercayaan.",
+          "sections": [
+            [
+              "Buat pengingat",
+              "Catat komitmen pembaruan pada sistem kerja tim yang disetujui."
+            ],
+            [
+              "Tutup lingkaran komunikasi",
+              "Pastikan pelanggan mengetahui hasil akhir atau alasan mengapa tindak lanjut masih diperlukan."
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "quizzes": [
+    {
+      "id": "cx-quiz",
+      "title": "Customer Experience Fundamentals",
+      "category": "Customer Experience",
+      "description": "Seberapa baik kamu memahami pengalaman pelanggan? Saatnya uji pemahamanmu.",
+      "minutes": 8,
+      "color": "peach",
+      "course": "cx",
+      "questions": [
+        {
+          "q": "Pelanggan sudah dua kali menanyakan status. Respons mana yang paling tepat?",
+          "options": [
+            "Meminta pelanggan menunggu tanpa penjelasan",
+            "Mengakui situasi, memberi status terverifikasi, dan menjelaskan waktu pembaruan",
+            "Menjanjikan hasil pasti hari ini",
+            "Mengirim jawaban otomatis yang sama"
+          ],
+          "answer": 1,
+          "why": "Pengakuan, informasi yang akurat, dan rencana pembaruan membantu memberikan kepastian tanpa menjanjikan hasil di luar kendali."
+        },
+        {
+          "q": "Customer journey mencakup interaksi pada tahap apa?",
+          "options": [
+            "Hanya saat pelanggan menyampaikan komplain",
+            "Hanya setelah transaksi",
+            "Sebelum, selama, dan setelah menggunakan layanan",
+            "Hanya saat menghubungi agent"
+          ],
+          "answer": 2,
+          "why": "Pengalaman pelanggan terbentuk dari seluruh titik kontak, bukan hanya percakapan dengan tim support."
+        },
+        {
+          "q": "Bagaimana sebaiknya menyampaikan estimasi?",
+          "options": [
+            "Sebagai janji pasti",
+            "Dengan menyebutkan bahwa itu perkiraan dan menjelaskan faktor yang relevan",
+            "Tidak perlu disampaikan",
+            "Dengan memilih waktu tercepat tanpa verifikasi"
+          ],
+          "answer": 1,
+          "why": "Estimasi perlu dibedakan dari hasil yang sudah terkonfirmasi agar ekspektasi pelanggan tetap realistis."
+        },
+        {
+          "q": "Apa langkah penting sebelum menutup percakapan?",
+          "options": [
+            "Langsung mengakhiri chat",
+            "Mengirim promosi tambahan",
+            "Merangkum hasil dan memastikan langkah berikutnya jelas",
+            "Meminta pelanggan mengulang seluruh masalah"
+          ],
+          "answer": 2,
+          "why": "Ringkasan dan langkah berikutnya membantu memastikan pelanggan memahami hasil dan tindak lanjut."
+        },
+        {
+          "q": "Manakah contoh empati yang spesifik?",
+          "options": [
+            "“Semua pelanggan mengalami hal sama.”",
+            "“Saya memahami kepastian jadwal ini penting untuk persiapan Kakak.”",
+            "“Tidak perlu khawatir, pasti selesai.”",
+            "“Itu bukan tanggung jawab saya.”"
+          ],
+          "answer": 1,
+          "why": "Empati mengakui konteks pelanggan secara spesifik, tanpa mengecilkan masalah atau membuat janji yang belum terverifikasi."
+        }
+      ]
+    },
+    {
+      "id": "communication-quiz",
+      "title": "The Art of Active Listening",
+      "category": "Communication",
+      "description": "Latih kemampuan mendengarkan dan memilih respons yang tepat.",
+      "minutes": 6,
+      "color": "sage",
+      "course": "communication",
+      "questions": [
+        {
+          "q": "Apa tujuan utama active listening?",
+          "options": [
+            "Menjawab secepat mungkin",
+            "Memahami pesan dan kebutuhan sebelum merespons",
+            "Mengarahkan semua percakapan ke template",
+            "Mempersingkat setiap jawaban"
+          ],
+          "answer": 1,
+          "why": "Active listening membantu memahami kebutuhan secara akurat sebelum memilih respons."
+        },
+        {
+          "q": "Kapan pertanyaan klarifikasi berguna?",
+          "options": [
+            "Saat ada informasi penting yang belum jelas",
+            "Setiap kali pelanggan mengetik",
+            "Setelah percakapan ditutup",
+            "Hanya untuk memperpanjang chat"
+          ],
+          "answer": 0,
+          "why": "Klarifikasi digunakan untuk memastikan detail yang diperlukan, dengan memanfaatkan informasi yang sudah tersedia."
+        },
+        {
+          "q": "Pelanggan menyampaikan instruksi membingungkan. Apa tindakan terbaik?",
+          "options": [
+            "Mengirim instruksi yang sama",
+            "Mengatakan instruksinya sudah jelas",
+            "Mengakui kendala lalu menyederhanakan langkah",
+            "Meminta pelanggan membaca ulang tanpa bantuan"
+          ],
+          "answer": 2,
+          "why": "Mengakui kendala dan menyesuaikan penjelasan membantu pelanggan melanjutkan proses."
+        },
+        {
+          "q": "Bagaimana cara memeriksa pemahaman?",
+          "options": [
+            "Membuat asumsi sendiri",
+            "Merangkum kebutuhan dan meminta konfirmasi bila perlu",
+            "Mengganti topik",
+            "Meminta semua dokumen lagi"
+          ],
+          "answer": 1,
+          "why": "Parafrase dan konfirmasi mengurangi kesalahpahaman tanpa meminta pelanggan mengulang seluruh cerita."
+        },
+        {
+          "q": "Bahasa layanan yang efektif sebaiknya…",
+          "options": [
+            "Penuh istilah internal",
+            "Panjang dan rumit",
+            "Sederhana, jelas, dan ramah",
+            "Selalu sama untuk semua kondisi"
+          ],
+          "answer": 2,
+          "why": "Bahasa yang sederhana dan sesuai konteks memudahkan pelanggan memahami informasi dan tindakan berikutnya."
+        }
+      ]
+    },
+    {
+      "id": "quality-quiz",
+      "title": "Service Quality Essentials",
+      "category": "Service Quality",
+      "description": "Gunakan insight QA untuk memilih langkah perbaikan yang tepat.",
+      "minutes": 7,
+      "color": "lavender",
+      "course": "service",
+      "questions": [
+        {
+          "q": "Feedback QA yang berguna didasarkan pada…",
+          "options": [
+            "Kesan pribadi",
+            "Contoh perilaku yang dapat diamati",
+            "Perbandingan personal antarrekan",
+            "Satu angka tanpa penjelasan"
+          ],
+          "answer": 1,
+          "why": "Contoh spesifik membuat feedback lebih jelas, adil, dan dapat ditindaklanjuti."
+        },
+        {
+          "q": "Sebelum membuat improvement plan, apa yang perlu dipahami?",
+          "options": [
+            "Akar masalah dan konteksnya",
+            "Siapa yang harus disalahkan",
+            "Cara menaikkan angka tanpa perubahan",
+            "Template paling panjang"
+          ],
+          "answer": 0,
+          "why": "Tindakan perbaikan perlu sesuai dengan penyebab, misalnya pengetahuan, akses informasi, atau kejelasan proses."
+        },
+        {
+          "q": "Target coaching yang baik bersifat…",
+          "options": [
+            "Abstrak tanpa batas waktu",
+            "Sama untuk semua orang",
+            "Spesifik, dapat diamati, dan memiliki waktu evaluasi",
+            "Hanya berfokus pada niat"
+          ],
+          "answer": 2,
+          "why": "Target perilaku yang jelas membuat kemajuan dapat diperiksa bersama."
+        },
+        {
+          "q": "Catatan kasus sebaiknya mencakup…",
+          "options": [
+            "Opini tentang pelanggan",
+            "Masalah, fakta, tindakan, status, dan langkah berikutnya",
+            "Hanya nama pelanggan",
+            "Hanya tanggal percakapan"
+          ],
+          "answer": 1,
+          "why": "Struktur ini membantu rekan tim memahami kasus dan melanjutkan penanganan."
+        },
+        {
+          "q": "Setelah coaching, langkah berikutnya adalah…",
+          "options": [
+            "Menganggap masalah sudah selesai",
+            "Melakukan evaluasi sampel baru dan memberi feedback",
+            "Menghapus catatan QA",
+            "Mengubah semua standar sekaligus"
+          ],
+          "answer": 1,
+          "why": "Tindak lanjut memeriksa penerapan hasil coaching dan membantu menjaga perubahan yang konsisten."
+        }
+      ]
+    }
+  ],
+  "articles": [
+    {
+      "id": "empathy",
+      "title": "Empati bukan sekadar “mohon maaf”",
+      "category": "Customer Experience",
+      "description": "Cara membangun koneksi yang lebih tulus dalam setiap percakapan dengan pelanggan.",
+      "minutes": 5,
+      "color": "peach",
+      "art": "conversation",
+      "date": "12 November 2026",
+      "featured": true,
+      "sections": [
+        [
+          "Memahami sebelum merespons",
+          "Permintaan maaf dapat membantu, tetapi empati menjadi lebih bermakna ketika respons menunjukkan bahwa kita memahami situasi pelanggan. Perhatikan kebutuhan yang disampaikan, dampaknya, dan informasi apa yang masih mereka tunggu."
+        ],
+        [
+          "Gunakan pengakuan yang spesifik",
+          "Alih-alih hanya menulis “mohon maaf atas ketidaknyamanannya”, hubungkan respons dengan konteks. Contoh: “Saya memahami bahwa kepastian jadwal ini penting untuk persiapan Kakak. Saya akan memeriksa status terakhir dan menginformasikan langkah berikutnya.”"
+        ],
+        [
+          "Lanjutkan dengan tindakan",
+          "Empati perlu diikuti tindakan yang nyata. Sampaikan status yang sudah terverifikasi dan kapan pembaruan berikutnya akan diberikan. Hindari menjanjikan hasil yang tidak berada dalam kendalimu."
+        ],
+        [
+          "Coba dalam percakapan berikutnya",
+          "Sebelum mengirim respons, periksa tiga hal: apakah konteks pelanggan sudah diakui, apakah informasinya akurat, dan apakah langkah berikutnya jelas?"
+        ]
+      ]
+    },
+    {
+      "id": "handover",
+      "title": "Checklist handover: agar tidak ada cerita yang terulang",
+      "category": "Service Quality",
+      "description": "Lima hal sederhana yang perlu ada saat meneruskan kasus ke rekan tim.",
+      "minutes": 4,
+      "color": "sand",
+      "art": "documents",
+      "date": "10 November 2026",
+      "sections": [
+        [
+          "Mulai dari ringkasan",
+          "Tulis tujuan pelanggan dan kendala utama dalam beberapa kalimat. Gunakan bahasa netral dan hindari detail yang tidak relevan."
+        ],
+        [
+          "Catat tindakan yang sudah dilakukan",
+          "Sampaikan pemeriksaan, hasil koordinasi, serta informasi yang sudah diberikan kepada pelanggan. Ini membantu tim penerima menghindari pengulangan."
+        ],
+        [
+          "Buat tindak lanjut jelas",
+          "Cantumkan status saat ini, dukungan yang diperlukan, pemilik langkah berikutnya, dan komitmen waktu pembaruan. Sesuaikan jalur handover dengan prosedur internal yang berlaku."
+        ]
+      ]
+    },
+    {
+      "id": "feedback",
+      "title": "Dari feedback ke kebiasaan baru",
+      "category": "Learning & Growth",
+      "description": "Jadikan feedback sebagai langkah kecil yang bisa dipraktikkan setiap hari.",
+      "minutes": 6,
+      "color": "sage",
+      "art": "growth",
+      "date": "8 November 2026",
+      "sections": [
+        [
+          "Pilih satu hal untuk diperbaiki",
+          "Feedback akan lebih mudah diterapkan jika diterjemahkan menjadi satu tindakan yang spesifik. Gunakan contoh percakapan agar perubahan yang diinginkan jelas."
+        ],
+        [
+          "Buat ruang untuk berlatih",
+          "Lakukan role-play singkat atau susun ulang respons pada kasus sebelumnya. Diskusikan apa yang berubah dan mengapa respons itu lebih membantu."
+        ],
+        [
+          "Tinjau kemajuan bersama",
+          "Pada waktu evaluasi yang disepakati, lihat sampel baru. Akui perubahan yang sudah terlihat dan tentukan penyesuaian berikutnya."
+        ]
+      ]
+    },
+    {
+      "id": "expectations",
+      "title": "Mengelola ekspektasi tanpa overpromise",
+      "category": "Communication",
+      "description": "Tetap membantu dan memberikan kepastian tanpa menjanjikan hal di luar kendali.",
+      "minutes": 4,
+      "color": "blue",
+      "art": "journey",
+      "date": "5 November 2026",
+      "sections": [
+        [
+          "Bedakan hasil dan tindakan",
+          "Kamu mungkin belum dapat memastikan hasil akhir, tetapi dapat menjelaskan pemeriksaan atau koordinasi yang akan dilakukan."
+        ],
+        [
+          "Gunakan bahasa yang terukur",
+          "Sebutkan mana fakta terkonfirmasi dan mana estimasi. Jika terdapat ketidakpastian, jelaskan dengan bahasa yang mudah dipahami."
+        ],
+        [
+          "Penuhi komitmen pembaruan",
+          "Catat janji pembaruan dan tindak lanjuti sesuai waktu yang disepakati. Jika hasil belum tersedia, informasikan status dan langkah yang masih berjalan."
+        ]
+      ]
+    },
+    {
+      "id": "knowledge",
+      "title": "Knowledge base yang benar-benar membantu",
+      "category": "Learning & Growth",
+      "description": "Temukan dan gunakan informasi dengan lebih cepat, tanpa kehilangan konteks.",
+      "minutes": 5,
+      "color": "lavender",
+      "art": "quality",
+      "date": "3 November 2026",
+      "sections": [
+        [
+          "Cari berdasarkan kebutuhan",
+          "Gunakan kata kunci yang menggambarkan kasus atau tujuan. Periksa apakah artikel membahas kondisi yang sama."
+        ],
+        [
+          "Periksa pemilik dan pembaruan",
+          "Untuk informasi operasional, pastikan dokumen memiliki pemilik proses dan pembaruan yang jelas. Jika ada konflik informasi, konfirmasi melalui jalur internal."
+        ],
+        [
+          "Berikan feedback",
+          "Catat pertanyaan yang belum terjawab dan bagian yang membingungkan. Masukan ini membantu pemilik materi meningkatkan kualitas knowledge base."
+        ]
+      ]
+    }
+  ]
+}
