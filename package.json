@@ -1,19 +1,22 @@
 {
   "name": "spun-learning-hub",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.0.0" },
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
-    "dev": "node --env-file-if-exists=.env server/node.mjs",
-    "start": "node --env-file-if-exists=.env server/node.mjs",
-    "test": "node --test tests/*.test.mjs",
-    "db:generate": "drizzle-kit generate",
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs && node --env-file-if-exists=.env scripts/dev.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@supabase/auth-js": "^2.119.0",
+    "postgres": "^3.4.7"
   },
   "devDependencies": {
-    "drizzle-kit": "0.31.10",
-    "drizzle-orm": "0.45.2",
+    "@electric-sql/pglite": "^0.3.0",
     "esbuild": "^0.27.0"
   }
 }

@@ -1,15 +1,14 @@
 # API SPUN Learning Hub
 
-Base URL lokal: `http://127.0.0.1:4173`. Semua respons API berupa JSON dengan Cache-Control: no-store. Frontend mengirim cookie sesi menggunakan credentials: same-origin.
+Base URL: domain Vercel (lokal `http://localhost:4173`). Semua respons berupa JSON dengan Cache-Control: no-store. Error berbentuk `{"error":"pesan"}`.
 
-Mutasi membutuhkan Content-Type: application/json, X-Learning-Hub: 1, dan Origin yang sama dengan aplikasi. Browser mengirim Origin secara otomatis. Maksimum body JSON: 16 KiB. Error berbentuk `{"error":"pesan"}`.
+Autentikasi memakai Supabase Auth. Setiap request (kecuali `/api/auth/config`) wajib membawa `Authorization: Bearer <access_token>` dari sesi Supabase. Login, daftar, undangan, reset password, dan logout dilakukan langsung ke Supabase Auth oleh `client/auth.js`, bukan lewat API ini. Profil (`users`) dibuat/diperbarui otomatis dari token pada request pertama.
+
+Mutasi juga membutuhkan Content-Type: application/json, X-Learning-Hub: 1, dan Origin yang sama dengan aplikasi. Maksimum body JSON: 16 KiB.
 
 | Method | Endpoint | Fungsi |
 | --- | --- | --- |
-| GET | /api/auth/config | Mode autentikasi dan status pendaftaran |
-| POST | /api/auth/register | Daftar, hanya instalasi Node |
-| POST | /api/auth/login | Login, hanya instalasi Node |
-| POST | /api/auth/logout | Cabut sesi, hanya instalasi Node |
+| GET | /api/auth/config | Publik: URL Supabase, publishable key, status tombol daftar |
 | GET | /api/me | Profil dan state pembelajaran |
 | GET | /api/catalog | Materi dan soal, tanpa kunci jawaban |
 | POST | /api/courses/:id/enroll | Mengikuti course |
@@ -21,13 +20,7 @@ Mutasi membutuhkan Content-Type: application/json, X-Learning-Hub: 1, dan Origin
 
 ## Body request
 
-Register:
-
-```json
-{"name":"Nama Peserta","email":"peserta@example.com","password":"password-yang-dipilih-pengguna"}
-```
-
-Login memakai email dan password. Password register minimal 12, maksimal 128 karakter. Sesi otomatis dibuat setelah login/daftar berhasil. Logout, enroll, complete, dan read menggunakan `{}`.
+Enroll, complete, dan read menggunakan `{}`.
 
 Bookmark:
 
@@ -42,8 +35,8 @@ Submit quiz:
 ```javascript
 const attemptId = crypto.randomUUID();
 const response = await fetch('/api/quizzes/cx-quiz/attempts', {
-  method: 'POST', credentials: 'same-origin',
-  headers: { 'Content-Type': 'application/json', 'X-Learning-Hub': '1' },
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-Learning-Hub': '1', Authorization: `Bearer ${accessToken}` },
   body: JSON.stringify({ attemptId, answers: [0, 2, 1, 2, 1] })
 });
 const data = await response.json();
@@ -56,12 +49,11 @@ Respons quiz: `{result,state}`. result berisi score, correct, total, passed, ans
 | Status | Arti |
 | --- | --- |
 | 400 | JSON/request salah |
-| 401 | Belum login, sesi berakhir, atau kredensial salah |
-| 403 | Origin/header mutasi tidak sesuai atau pendaftaran ditutup |
+| 401 | Token tidak ada, tidak valid, atau kedaluwarsa |
+| 403 | Origin/header mutasi tidak sesuai |
 | 404 | Endpoint atau materi tidak tersedia |
-| 409 | Email sudah terdaftar atau konflik ID percobaan |
+| 409 | Konflik ID percobaan |
 | 413 | Body terlalu besar |
 | 415 | Content-Type salah |
 | 422 | Input tidak valid |
-| 429 | Terlalu banyak percobaan login/daftar |
-| 500/503 | Kendala server/database |
+| 500/503 | Kendala server/database atau konfigurasi Supabase belum lengkap |

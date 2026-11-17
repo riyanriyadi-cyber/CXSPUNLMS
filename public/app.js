@@ -144,7 +144,7 @@
     case 'article-category':articleCategory=id;renderKnowledge();break;
     case 'reset-articles':articleTab='all';articleCategory='all';articleQuery='';renderKnowledge();break;
     case 'read-article':if(!state.readArticles.includes(id)){await mutate(`/api/articles/${id}/read`);b.disabled=true;b.innerHTML=icon('check')+'Sudah dibaca';b.className='btn btn-outline';render();toast('Artikel ditandai sudah dibaca.');}break;
-    case 'logout':await window.hubRequest('/api/auth/logout',{method:'POST',body:'{}'});location.reload();break;
+    case 'logout':await window.hubSignOut();break;
     case 'profile':openProfile();break;
     case 'help':openHelp();break;
     case 'notifications':notifications();break;
