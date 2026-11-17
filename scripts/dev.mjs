@@ -8,11 +8,12 @@ import {fileURLToPath} from 'node:url';
 import {createHandler} from '../server/app.mjs';
 import {productionDb} from '../server/db.mjs';
 import {supabaseConfig, supabaseVerifier} from '../server/auth.mjs';
+import {supabaseAdmin} from '../server/supabase-admin.mjs';
 import {securityHeaders, mimeTypes} from '../server/headers.mjs';
 
 const root = fileURLToPath(new URL('../public/', import.meta.url));
 const config = supabaseConfig();
-const handle = createHandler({getDb: productionDb, verifyToken: supabaseVerifier(config), config});
+const handle = createHandler({getDb: productionDb, verifyToken: supabaseVerifier(config), config, admin: supabaseAdmin(config)});
 const port = Number(process.env.PORT || 4173);
 
 http.createServer(async (req, res) => {

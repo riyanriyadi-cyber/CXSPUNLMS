@@ -57,3 +57,30 @@ Respons quiz: `{result,state}`. result berisi score, correct, total, passed, ans
 | 415 | Content-Type salah |
 | 422 | Input tidak valid |
 | 500/503 | Kendala server/database atau konfigurasi Supabase belum lengkap |
+
+## API admin
+
+Semua endpoint `/api/admin/*` butuh akun dengan `role = 'admin'` (dicek di database setiap request; selain admin → 403). Akun berstatus `disabled` ditolak di semua endpoint (403, `code: "disabled"`). `kind` = `course` | `quiz` | `article`.
+
+| Method | Endpoint | Fungsi |
+| --- | --- | --- |
+| GET | /api/admin/content | Ringkasan semua materi + status (`draft`, `published`, `changed`) |
+| GET | /api/admin/content/:kind/:id | Draft lengkap untuk editor |
+| POST | /api/admin/content/:kind | Buat materi baru `{draft}` (ID dibuat dari judul) |
+| POST | /api/admin/content/:kind/:id | Simpan draft `{draft, baseRevision}`; 409 jika sudah diubah admin lain |
+| POST | /api/admin/content/:kind/:id/publish | Tayangkan draft (validasi ketat) |
+| POST | /api/admin/content/:kind/:id/unpublish | Sembunyikan dari peserta |
+| POST | /api/admin/content/:kind/:id/delete | Hapus permanen (hanya jika tidak tayang) |
+| POST | /api/admin/content/:kind/reorder | `{ids: [...]}` urutan tampil |
+| POST | /api/admin/media/upload-url | `{contentType, size}` → `{uploadUrl, publicUrl}` (PNG/JPG/WEBP/GIF, ≤ 5 MB) |
+| GET | /api/admin/users | Semua akun (termasuk yang belum aktivasi) + ringkasan progres |
+| POST | /api/admin/users/invite | `{name, email, role}` kirim undangan |
+| GET | /api/admin/users/:id | Progres per course & quiz |
+| POST | /api/admin/users/:id/role | `{role: "admin" | "learner"}` |
+| POST | /api/admin/users/:id/status | `{status: "active" | "disabled"}` (juga ban/unban di Supabase Auth) |
+| POST | /api/admin/users/:id/resend | Kirim ulang undangan (hanya untuk yang belum pernah masuk) |
+| GET | /api/admin/report | Statistik per course & quiz + daftar peserta |
+
+Format bagian (section) modul/artikel: `{heading, body, image?: {url, alt, caption}, video?: {youtubeId, title}}`. Saat menyimpan, `video` boleh dikirim sebagai `{url: "<link YouTube>"}`. URL gambar harus dari bucket `lms-media` proyek ini.
+
+Endpoint peserta `POST /api/courses/:id/lessons/:index/complete` menerima `{lessonId}` (disarankan) agar progres tetap tepat walau modul diurutkan ulang.

@@ -1,40 +1,16 @@
-// Uji API dengan Postgres sungguhan (PGlite, Postgres dalam WASM) memakai migrasi Supabase yang sama.
+// Uji API peserta dengan Postgres sungguhan (PGlite) memakai migrasi Supabase yang sama.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
 import {randomUUID, webcrypto} from 'node:crypto';
-import {PGlite} from '@electric-sql/pglite';
-import {createDb} from '../server/db.mjs';
-import {createHandler} from '../server/app.mjs';
 import {supabaseVerifier, profileFromClaims} from '../server/auth.mjs';
-
-async function setupDb() {
-  const pg = new PGlite();
-  // Stub minimal skema Supabase: auth.users + role anon/authenticated.
-  await pg.exec(`create schema auth; create table auth.users(id uuid primary key);
-    create role anon; create role authenticated;`);
-  await pg.exec(await readFile(new URL('../supabase/migrations/20261117000000_learning_hub_init.sql', import.meta.url), 'utf8'));
-  const db = createDb({
-    query: async (text, params) => (await pg.query(text, params)).rows,
-    transaction: fn => pg.transaction(tx => fn(async (text, params) => (await tx.query(text, params)).rows))
-  });
-  return {pg, db};
-}
+import {setupApp} from './helpers.mjs';
 
 test('Learning Hub API on Postgres', async t => {
-  const {pg, db} = await setupDb();
-  const users = {
-    'token-alice-0000000000000': {id: randomUUID(), name: 'Alice Learner', email: 'alice@example.test'},
-    'token-bob-00000000000000000': {id: randomUUID(), name: 'Bob Learner', email: 'bob@example.test'}
-  };
-  for (const u of Object.values(users)) await pg.query('insert into auth.users(id) values($1)', [u.id]);
-  const handle = createHandler({getDb: async () => db, verifyToken: async token => users[token] || null, config: {supabaseUrl: 'https://demo.supabase.co', supabaseKey: 'sb_publishable_demo', allowRegistration: false}});
-  const origin = 'https://learning.example.test';
-  const call = async (path, {token, body, method = body ? 'POST' : 'GET', headers = {}} = {}) => {
-    const res = await handle(new Request(origin + path, {method, headers: {...(token ? {Authorization: `Bearer ${token}`} : {}), ...(body ? {'Content-Type': 'application/json', 'X-Learning-Hub': '1', Origin: origin} : {}), ...headers}, ...(body ? {body: JSON.stringify(body)} : {})}));
-    return {status: res.status, data: await res.json(), headers: res.headers};
-  };
-  const alice = 'token-alice-0000000000000', bob = 'token-bob-00000000000000000';
+  const {pg, call, addUser} = await setupApp();
+  const A = await addUser('alice', {name: 'Alice Learner', email: 'alice@example.test'});
+  const B = await addUser('bob', {name: 'Bob Learner', email: 'bob@example.test'});
+  const users = {[A.token]: A, [B.token]: B};
+  const alice = A.token, bob = B.token;
 
   await t.test('config is public and exposes only the publishable key', async () => {
     const c = await call('/api/auth/config');
@@ -45,12 +21,12 @@ test('Learning Hub API on Postgres', async t => {
   await t.test('anonymous, malformed and unknown tokens are rejected', async () => {
     assert.equal((await call('/api/me')).status, 401);
     assert.equal((await call('/api/me', {headers: {Authorization: 'Bearer short'}})).status, 401);
-    assert.equal((await call('/api/me', {token: 'token-unknown-000000000000'})).status, 401);
+    assert.equal((await call('/api/me', {token: 'token-unknown-00000000000000000000'})).status, 401);
     assert.equal((await call('/api/me', {headers: {'oai-authenticated-user-id': 'forged'}})).status, 401);
   });
   await t.test('first request creates the profile row from the verified token', async () => {
     const me = await call('/api/me', {token: alice});
-    assert.equal(me.status, 200); assert.equal(me.data.profile.name, 'Alice Learner'); assert.deepEqual(me.data.state.enrolled, []);
+    assert.equal(me.status, 200); assert.equal(me.data.profile.name, 'Alice Learner'); assert.equal(me.data.profile.role, 'learner'); assert.deepEqual(me.data.state.enrolled, []);
     const row = (await pg.query('select name,email from public.users where id=$1', [users[alice].id])).rows[0];
     assert.deepEqual(row, {name: 'Alice Learner', email: 'alice@example.test'});
   });
@@ -132,7 +108,7 @@ test('Supabase token verification (getClaims + JWKS)', async t => {
     const verify = supabaseVerifier({supabaseUrl, supabaseKey: 'sb_publishable_x'});
     const now = Math.floor(Date.now() / 1000), sub = randomUUID();
     const claims = {sub, role: 'authenticated', aud: 'authenticated', email: 'nia@example.test', exp: now + 3600, iat: now, user_metadata: {full_name: 'Nia Concierge'}};
-    await t.test('valid token → profile', async () => assert.deepEqual(await verify(await sign(claims)), {id: sub, name: 'Nia Concierge', email: 'nia@example.test'}));
+    await t.test('valid token → profile', async () => assert.deepEqual(await verify(await sign(claims)), {id: sub, name: 'Nia Concierge', email: 'nia@example.test', hasName: true}));
     await t.test('wrong signing key → rejected', async () => assert.equal(await verify(await sign(claims, other.privateKey)), null));
     await t.test('expired token → rejected', async () => assert.equal(await verify(await sign({...claims, exp: now - 10})), null));
     await t.test('anon role / anonymous user → rejected', async () => {
@@ -140,5 +116,5 @@ test('Supabase token verification (getClaims + JWKS)', async t => {
       assert.equal(await verify(await sign({...claims, is_anonymous: true})), null);
     });
   } finally {globalThis.fetch = realFetch;}
-  assert.deepEqual(profileFromClaims({sub: 'x', role: 'authenticated', email: 'tri@spun.global'}), {id: 'x', name: 'tri', email: 'tri@spun.global'});
+  assert.deepEqual(profileFromClaims({sub: 'x', role: 'authenticated', email: 'tri@spun.global'}), {id: 'x', name: 'tri', email: 'tri@spun.global', hasName: false});
 });

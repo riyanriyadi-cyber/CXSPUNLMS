@@ -2,9 +2,10 @@
 import {createHandler} from '../server/app.mjs';
 import {productionDb} from '../server/db.mjs';
 import {supabaseConfig, supabaseVerifier} from '../server/auth.mjs';
+import {supabaseAdmin} from '../server/supabase-admin.mjs';
 
 const config = supabaseConfig();
-const handle = createHandler({getDb: productionDb, verifyToken: supabaseVerifier(config), config});
+const handle = createHandler({getDb: productionDb, verifyToken: supabaseVerifier(config), config, admin: supabaseAdmin(config)});
 
 // Bangun ulang URL publik: path asli dari rewrite (?__path=) dan host dari header proxy Vercel,
 // sehingga pemeriksaan Origin di core.mjs membandingkan dengan domain yang dibuka pengguna.

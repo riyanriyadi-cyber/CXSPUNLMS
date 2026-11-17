@@ -1,94 +1,88 @@
 # SPUN Learning Hub — Supabase + Vercel
 
-LMS SPUN dengan frontend HTML/CSS/JS statis, API di **Vercel Functions**, data di **Supabase Postgres**, dan akun di **Supabase Auth** (email + password, undangan, reset password).
+LMS SPUN dengan frontend HTML/CSS/JS statis, API di **Vercel Functions**, data di **Supabase Postgres**, akun di **Supabase Auth**, gambar materi di **Supabase Storage**, dan **panel admin** di `/admin.html`.
 
 ```
-Browser ──(Supabase Auth: login, undangan, reset)──▶ Supabase Auth
+Browser ──(login, undangan, reset)──▶ Supabase Auth
    │
-   └─ /api/*  + Bearer access token ──▶ Vercel Function (api/handler.js)
-                                          ├─ verifikasi JWT (JWKS Supabase)
-                                          └─ SQL ──▶ Supabase Postgres (pooler)
+   ├─ /api/*        + Bearer token ──▶ Vercel Function ──▶ Supabase Postgres
+   ├─ /api/admin/*  (role admin)   ──┘    └─ secret key (server saja): undang, nonaktifkan, URL unggah
+   └─ unggah gambar (signed URL) ──▶ Supabase Storage (bucket lms-media)
 ```
 
-Penilaian quiz tetap di server: kunci jawaban ada di `server/catalog.json` dan tidak pernah dikirim ke browser. Browser hanya memegang *publishable key*; tabel data belajar tertutup dari Data API Supabase (RLS aktif, hak `anon`/`authenticated` dicabut).
+## Fitur
+
+**Peserta:** dashboard, course & modul (teks, gambar, video YouTube), quiz dengan skor dihitung server, Knowledge Center, bookmark, progres per akun.
+
+**Admin** (menu *Admin panel* di sidebar, hanya untuk akun ber-role admin):
+- **Materi** — buat/edit course, modul, quiz, dan artikel. Perubahan tersimpan sebagai *draft*; peserta hanya melihat versi yang sudah di-*publish*. Unggah gambar, tempel link YouTube, pratinjau, urutkan, sembunyikan, hapus.
+- **Peserta** — undang lewat email (termasuk freelancer dengan email pribadi), jadikan admin/peserta, nonaktifkan/aktifkan, kirim ulang undangan, lihat progres per orang.
+- **Laporan** — progres per course, hasil per quiz, unduh CSV peserta.
+
+Keamanan: role dan status dicek di database setiap request; kunci jawaban quiz tidak pernah dikirim ke browser; semua teks materi di-escape; tabel tertutup dari Data API Supabase (RLS); secret key hanya di server. Dua admin yang mengedit konten yang sama tidak saling menimpa (deteksi revisi).
 
 ## Struktur
 
 | File/folder | Fungsi |
 | --- | --- |
-| `public/` | Frontend (HTML, CSS, `app.js`, aset). `public/auth.js` dihasilkan saat build |
-| `client/auth.js` | Sumber UI login/daftar/undangan/reset + klien Supabase Auth |
+| `public/index.html`, `app.js`, `styles.css` | Aplikasi peserta |
+| `public/admin.html`, `admin.js`, `admin.css` | Panel admin |
+| `client/auth.js` | Login/undangan/reset (di-bundle menjadi `public/auth.js` saat build) |
 | `api/handler.js` | Vercel Function untuk semua `/api/*` |
-| `server/app.mjs` | Handler API: verifikasi token, sinkron profil, routing ke `core.mjs` |
-| `server/core.mjs` | Logika belajar & penilaian quiz (tidak berubah dari versi sebelumnya) |
-| `server/auth.mjs` | Verifikasi access token Supabase |
-| `server/db.mjs` | Adapter Postgres (postgres.js) |
-| `server/catalog.json` | Course, modul, soal + kunci jawaban, artikel |
-| `supabase/migrations/` | Schema database (jalankan sekali) |
-| `scripts/dev.mjs` | Server lokal yang meniru Vercel |
-| `tests/` | Uji API dengan Postgres (PGlite) + verifikasi JWT |
+| `server/app.mjs` | Verifikasi token, role & status, routing |
+| `server/core.mjs` | API peserta |
+| `server/admin.mjs` | API admin |
+| `server/content.mjs` | Model, validasi, dan escape materi |
+| `server/supabase-admin.mjs` | Operasi dengan secret key (undang, nonaktifkan, URL unggah) |
+| `supabase/migrations/` | Migrasi database — jalankan berurutan |
+| `supabase/seed/catalog.json` | Materi contoh awal (sudah dimasukkan oleh migrasi 2) |
+| `tests/` | Uji API peserta & admin (Postgres in-memory) |
 
-## Setup 1 — Supabase
+## Upgrade dari versi tanpa admin (sudah live)
 
-1. Buat project di [supabase.com](https://supabase.com). Pilih region **Southeast Asia (Singapore)** agar dekat dengan fungsi Vercel (`sin1`).
-2. **SQL Editor** → tempel isi `supabase/migrations/20261117000000_learning_hub_init.sql` → Run.
-3. **Authentication → Sign In / Providers**
-   - Matikan **Allow new users to sign up** (rekomendasi: akun hanya lewat undangan).
-   - Biarkan **Confirm email** aktif.
-   - Set **Minimum password length** = 12.
-4. **Authentication → URL Configuration**: isi **Site URL** dengan domain Vercel (mis. `https://learning.spun.global`) dan tambahkan domain itu + `http://localhost:4173` ke **Redirect URLs**.
-5. **Authentication → SMTP Settings**: pasang SMTP sendiri (Google Workspace SMTP relay, Brevo, Resend, dll.). **Wajib** untuk undangan dan reset password: tanpa SMTP sendiri, Supabase hanya mengirim email ke anggota tim project Supabase dan dibatasi ±2 email/jam.
-6. Catat dari **Project Settings**:
-   - **API Keys** → *Publishable key* (`sb_publishable_…`; boleh juga legacy *anon key*).
-   - **Connect → Transaction pooler** → connection string port **6543** (ganti `[YOUR-PASSWORD]`).
+1. **Ganti file di GitHub** dengan isi ZIP ini (upload, timpa file lama, commit). File lama `server/catalog.json` boleh dihapus.
+2. **Supabase → SQL Editor**: jalankan `supabase/migrations/20261117020000_admin_cms.sql`. Isinya: tabel materi, role & status akun, bucket gambar `lms-media`, konversi progres lama, dan 14 materi contoh.
+3. **Jadikan akun Anda admin** (akun harus sudah pernah login):
+   ```sql
+   update public.users set role = 'admin' where email = 'email-anda@spun.global';
+   ```
+4. **Vercel → Environment Variables**: tambahkan `SUPABASE_SECRET_KEY` = *Secret key* (`sb_secret_…`) dari Supabase → Project Settings → API Keys. Hanya di variabel ini — jangan di `SUPABASE_PUBLISHABLE_KEY`.
+5. **Redeploy**, lalu login: menu **Admin panel** muncul di sidebar.
 
-## Setup 2 — Vercel
+## Setup baru dari nol
 
-1. Push folder ini ke repo GitHub (private), lalu **Vercel → Add New Project** → import repo. Framework preset: **Other** (pengaturan build sudah ada di `vercel.json`).
-2. **Environment Variables** (Production + Preview):
+1. Supabase: buat project (region Singapore), jalankan **kedua** file migrasi berurutan, atur Auth (matikan sign-up publik, password min. 12, Site URL & Redirect URLs, SMTP sendiri).
+2. Vercel: import repo, Framework **Other**, isi env var:
 
    | Variabel | Isi |
    | --- | --- |
    | `SUPABASE_URL` | `https://<ref>.supabase.co` |
-   | `SUPABASE_PUBLISHABLE_KEY` | publishable/anon key |
-   | `DATABASE_URL` | connection string transaction pooler (port 6543) |
-   | `ALLOW_REGISTRATION` | `false` (hanya mengatur tampilan tombol Daftar) |
+   | `SUPABASE_PUBLISHABLE_KEY` | Publishable key (`sb_publishable_…`) atau legacy anon key |
+   | `SUPABASE_SECRET_KEY` | Secret key (`sb_secret_…`) atau legacy service_role — **rahasia, server saja** |
+   | `DATABASE_URL` | Transaction pooler, port 6543 |
+   | `ALLOW_REGISTRATION` | `false` |
 
-3. Deploy. Pasang custom domain bila perlu, lalu samakan dengan Site URL di Supabase.
+3. Login sekali, jadikan akun Anda admin (SQL di atas), lalu kelola sisanya dari panel admin.
 
-## Mengelola akun
+## Catatan pemakaian admin
 
-- **Undang peserta** (termasuk freelancer/kontrak dengan email non-spun.global): Supabase → Authentication → Users → **Invite user**. Peserta klik link di email → isi nama + password → langsung masuk.
-- **Tanpa SMTP (sementara)**: Users → **Add user → Create new user**, centang *Auto Confirm*, lalu berikan password awal secara aman. Lupa password tidak akan berfungsi sampai SMTP dipasang.
-- **Nonaktifkan/hapus akun**: hapus user di Authentication → Users. Seluruh progres, bookmark, dan riwayat quiz ikut terhapus (cascade).
-- **Pendaftaran terbuka**: hanya jika *Allow new users to sign up* di Supabase dinyalakan. `ALLOW_REGISTRATION=true` sekadar memunculkan tombol Daftar; gerbang sebenarnya ada di Supabase.
-
-## Laporan progres
-
-View `learning_report` (SQL Editor atau Table Editor): nama, email, jumlah course diikuti, modul selesai, quiz dicoba/lulus (≥80), aktivitas terakhir. Contoh:
-
-```sql
-select * from learning_report order by last_activity desc nulls last;
-```
+- **Draft vs tayang**: “Simpan draft” tidak mengubah apa yang dilihat peserta. Klik **Publish** / **Publish perubahan** untuk menayangkan.
+- **Sembunyikan** menarik konten dari peserta tanpa menghapus progres. **Hapus** hanya untuk konten yang tidak tayang dan bersifat permanen.
+- Menyisipkan, mengurutkan, atau menghapus modul aman: progres peserta tercatat per ID modul.
+- Gambar maks. 5 MB (PNG/JPG/WEBP/GIF). Video lewat link YouTube (bisa *unlisted*).
+- Durasi course dihitung otomatis dari durasi modul. Nilai lulus quiz tetap 80.
+- Undangan dan reset password butuh SMTP sendiri di Supabase.
+- Admin tidak bisa mengubah role/status akunnya sendiri, jadi selalu tersisa minimal satu admin.
 
 ## Pengembangan lokal
 
 ```bash
 npm install
-cp .env.example .env   # isi SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, DATABASE_URL
+cp .env.example .env   # isi variabel Supabase
 npm run dev            # http://localhost:4173
-npm test               # tidak butuh Supabase; memakai Postgres in-memory
+npm test               # tidak butuh Supabase
 ```
 
-Alternatif: `vercel dev` (Vercel CLI) memakai `vercel.json` yang sama.
+## Batas versi
 
-## Mengubah materi
-
-Edit `server/catalog.json`, commit, deploy. Jangan mengganti ID course/quiz/artikel atau urutan modul yang sudah dipakai: progres merujuk ID dan indeks modul. Riwayat quiz menyimpan snapshot pembahasan saat dikumpulkan.
-
-## Catatan & batas versi
-
-- Materi adalah contoh latihan, bukan SOP resmi. Penyelesaian modul bersifat self-reported; quiz untuk latihan, bukan ujian berpengawasan.
-- Data dari versi SQLite/Cloudflare lama tidak dimigrasikan; akun dimulai dari nol.
-- Belum ada editor materi/admin di dalam aplikasi, sertifikat, unggah video, atau SCORM.
-- Biaya: Vercel Hobby dibatasi untuk penggunaan non-komersial (aplikasi internal perusahaan perlu Pro). Project Supabase Free di-pause setelah 1 minggu tanpa aktivitas; Pro tidak.
+Belum ada sertifikat, unggah video langsung (pakai YouTube), SCORM, atau riwayat versi materi. Hapus akun permanen dilakukan di Supabase → Authentication → Users.

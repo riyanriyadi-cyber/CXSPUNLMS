@@ -7,7 +7,9 @@ export function supabaseConfig(env = process.env) {
   return {
     supabaseUrl: (env.SUPABASE_URL || '').replace(/\/$/, ''),
     supabaseKey: env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY || '',
-    allowRegistration: env.ALLOW_REGISTRATION === 'true'
+    allowRegistration: env.ALLOW_REGISTRATION === 'true',
+    // Server-only. Dipakai untuk undang/nonaktifkan peserta & unggah gambar. Tidak pernah dikirim ke browser.
+    secretKey: env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || ''
   };
 }
 
@@ -17,7 +19,7 @@ export function profileFromClaims(claims) {
   const meta = claims.user_metadata || {};
   const raw = typeof meta.full_name === 'string' ? meta.full_name : typeof meta.name === 'string' ? meta.name : '';
   const name = raw.trim().slice(0, 80) || email.split('@')[0] || 'Learner';
-  return {id: claims.sub, name, email};
+  return {id: claims.sub, name, email, hasName: Boolean(raw.trim())};
 }
 
 export function supabaseVerifier({supabaseUrl, supabaseKey}) {

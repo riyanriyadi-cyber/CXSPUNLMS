@@ -141,6 +141,11 @@ window.hubReady = (async () => {
         overlay().remove(); document.body.classList.remove('is-loading');
         return {...me, catalog, auth: {mode: 'supabase', registration: config.registration}};
       } catch (error) {
+        if (error.status === 403) {
+          card(`<h1>Akses belum tersedia.</h1><p>${esc(error.message)}</p><button id="auth-signout" class="btn btn-outline auth-submit">Keluar</button>`);
+          document.getElementById('auth-signout').onclick = () => window.hubSignOut();
+          return new Promise(() => {});
+        }
         if (error.status !== 401) throw error;
         await auth.signOut({scope: 'local'}).catch(() => {});
       }

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#ff7623" />
+  <meta name="robots" content="noindex" />
+  <title>Admin · SPUN Learning Hub</title>
+  <link rel="icon" type="image/png" href="assets/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="admin.css" />
+  <script src="auth.js" defer></script>
+  <script src="admin.js" defer></script>
+</head>
+<body class="is-loading admin-page">
+  <div id="auth-overlay" class="auth-overlay"><div class="auth-card"><img src="assets/spun-logo.png" alt="SPUN" /><h1>Menyiapkan panel admin…</h1><p>Memeriksa akun dan hak akses.</p></div></div>
+  <div class="mobile-scrim" id="mobile-scrim"></div>
+  <aside class="sidebar" id="sidebar" aria-label="Navigasi admin">
+    <a href="#content/course" class="brand" aria-label="Admin SPUN Learning Hub">
+      <img src="assets/spun-logo.png" alt="SPUN" width="103" height="31" />
+      <span>Learning Hub<span class="brand-dot">.</span></span>
+    </a>
+    <div class="workspace-label">ADMIN PANEL</div>
+    <nav id="admin-nav"></nav>
+    <div class="sidebar-bottom">
+      <a class="btn btn-outline admin-back" href="/">← Kembali ke Learning Hub</a>
+      <div class="admin-me"><strong id="admin-name"></strong><small id="admin-email"></small></div>
+    </div>
+  </aside>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-title"><button class="icon-button mobile-toggle" data-act="menu" aria-label="Buka navigasi" aria-controls="sidebar" aria-expanded="false">☰</button><span id="breadcrumb">Admin</span></div>
+    </header>
+    <main id="main" tabindex="-1"></main>
+  </div>
+  <dialog id="modal" aria-labelledby="modal-title"><div id="modal-content"></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
