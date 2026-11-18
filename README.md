@@ -15,11 +15,11 @@ Browser ──(login, undangan, reset)──▶ Supabase Auth
 **Peserta:** dashboard, course & modul (teks, gambar, video YouTube), quiz dengan skor dihitung server, Knowledge Center, bookmark, progres per akun. Detail course, modul, quiz, dan artikel tampil sebagai halaman penuh dengan alamat sendiri (bisa di-refresh, di-bookmark, dan memakai tombol Back), contoh: `#course/cx`, `#learn/cx/2`, `#quiz/cx-quiz`, `#knowledge/empathy`.
 
 **Admin** (menu *Admin panel* di sidebar, hanya untuk akun ber-role admin):
-- **Materi** — buat/edit course, modul, quiz, dan artikel. Perubahan tersimpan sebagai *draft*; peserta hanya melihat versi yang sudah di-*publish*. Unggah gambar, tempel link YouTube, pratinjau, urutkan, sembunyikan, hapus.
+- **Materi** — buat/edit course, modul, quiz, dan artikel. Kolom *Isi* memakai editor teks lengkap: font, ukuran, bold/italic/underline/coret, warna & highlight, bullet & numbering, rata teks, indent, tabel, link, kutipan, garis pemisah, undo/redo, serta gambar yang bisa di-paste atau di-drag ke tengah teks (otomatis diunggah). Perubahan tersimpan sebagai *draft*; peserta hanya melihat versi yang sudah di-*publish*. Unggah gambar, tempel link YouTube, pratinjau, urutkan, sembunyikan, hapus.
 - **Peserta** — undang lewat email (termasuk freelancer dengan email pribadi), jadikan admin/peserta, nonaktifkan/aktifkan, kirim ulang undangan, lihat progres per orang.
 - **Laporan** — progres per course, hasil per quiz, unduh CSV peserta.
 
-Keamanan: role dan status dicek di database setiap request; kunci jawaban quiz tidak pernah dikirim ke browser; semua teks materi di-escape; tabel tertutup dari Data API Supabase (RLS); secret key hanya di server. Dua admin yang mengedit konten yang sama tidak saling menimpa (deteksi revisi).
+Keamanan: HTML dari editor disaring ketat di server (`server/rich.mjs`, daftar izin tag/atribut/style; gambar hanya dari bucket proyek); role dan status dicek di database setiap request; kunci jawaban quiz tidak pernah dikirim ke browser; semua teks materi di-escape; tabel tertutup dari Data API Supabase (RLS); secret key hanya di server. Dua admin yang mengedit konten yang sama tidak saling menimpa (deteksi revisi).
 
 ## Struktur
 
@@ -33,6 +33,8 @@ Keamanan: role dan status dicek di database setiap request; kunci jawaban quiz t
 | `server/core.mjs` | API peserta |
 | `server/admin.mjs` | API admin |
 | `server/content.mjs` | Model, validasi, dan escape materi |
+| `server/rich.mjs` | Penyaring HTML kolom Isi |
+| `client/editor.js` | Editor teks panel admin (di-bundle menjadi `public/editor.js`) |
 | `server/supabase-admin.mjs` | Operasi dengan secret key (undang, nonaktifkan, URL unggah) |
 | `supabase/migrations/` | Migrasi database — jalankan berurutan |
 | `supabase/seed/catalog.json` | Materi contoh awal (sudah dimasukkan oleh migrasi 2) |

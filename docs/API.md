@@ -81,6 +81,6 @@ Semua endpoint `/api/admin/*` butuh akun dengan `role = 'admin'` (dicek di datab
 | POST | /api/admin/users/:id/resend | Kirim ulang undangan (hanya untuk yang belum pernah masuk) |
 | GET | /api/admin/report | Statistik per course & quiz + daftar peserta |
 
-Format bagian (section) modul/artikel: `{heading, body, image?: {url, alt, caption}, video?: {youtubeId, title}}`. Saat menyimpan, `video` boleh dikirim sebagai `{url: "<link YouTube>"}`. URL gambar harus dari bucket `lms-media` proyek ini.
+Format bagian (section) modul/artikel: `{heading, html, image?: {url, alt, caption}, video?: {youtubeId, title}}`. `html` disaring server (tag: p, br, strong, em, u, s, span, a, ul, ol, li, blockquote, hr, table, img; style: text-align, font-family terbatas, font-size 13/18/22px, color, background-color). Format lama `body` (teks biasa) tetap diterima dan dikonversi otomatis. Saat menyimpan, `video` boleh dikirim sebagai `{url: "<link YouTube>"}`. URL gambar harus dari bucket `lms-media` proyek ini.
 
 Endpoint peserta `POST /api/courses/:id/lessons/:index/complete` menerima `{lessonId}` (disarankan) agar progres tetap tepat walau modul diurutkan ulang.

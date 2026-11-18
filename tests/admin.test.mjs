@@ -75,6 +75,37 @@ test('Admin panel API', async t => {
     assert.deepEqual(st.progress[course.id], [1]); // "Asuransi" kini di posisi 2 (indeks 1)
   });
 
+  await t.test('rich text: allowed formatting kept, scripts/handlers/foreign images stripped', async () => {
+    const img = `${SUPABASE_URL}/storage/v1/object/public/lms-media/content/2026/11/b.png`;
+    const html = `<p style="text-align:center;position:fixed" onclick="steal()">Halo <strong>tebal</strong> <span style="font-family:Manrope, sans-serif;font-size:18px;color:#d16527;background-color:#fff3b0">teks</span><script>alert(1)</script></p>`
+      + `<p data-indent="2">indent</p><ul><li><p>poin</p></li></ul><table><tbody><tr><th><p>A</p></th></tr><tr><td colspan="1"><p>B</p></td></tr></tbody></table>`
+      + `<img src="${img}" alt="diagram" data-size="m" onerror="x()"><img src="https://evil.example/x.png"><img src="data:image/png;base64,AAAA">`
+      + `<a href="javascript:alert(1)">bahaya</a><a href="https://spun.global">aman</a><iframe src="https://evil.example"></iframe><style>body{display:none}</style>`;
+    const draft = structuredClone(course.draft); draft.lessons[0].sections = [{heading: 'Rich', html}];
+    const saved = await call(`/api/admin/content/course/${course.id}`, {token: adm, body: {draft}});
+    assert.equal(saved.status, 200);
+    const out = saved.data.item.draft.lessons[0].sections[0].html;
+    for (const bad of ['<script', 'onclick', 'onerror', 'position', 'evil.example', 'data:image', 'javascript:', '<iframe', '<style']) assert.ok(!out.includes(bad), bad);
+    for (const good of ['text-align:center', '<strong>tebal</strong>', 'font-family:Manrope', 'font-size:18px', 'color:#d16527', 'background-color:#fff3b0', 'data-indent="2"', '<ul>', '<th>', `src="${img}"`, 'data-size="m"', 'href="https://spun.global"', 'rel="noopener noreferrer"']) assert.ok(out.includes(good), good);
+    course = saved.data.item;
+    await call(`/api/admin/content/course/${course.id}/publish`, {token: adm, body: {}});
+    const learnerSection = (await call('/api/catalog', {token: lrn})).data.courses.find(c => c.id === course.id).lessons.find(l => l.sections[0]?.heading === 'Rich').sections[0];
+    assert.equal(learnerSection.html, out); // tidak di-escape ganda, sudah aman
+    const empty = structuredClone(course.draft); empty.lessons[0].sections = [{heading: '', html: '<p></p><p> </p>'}];
+    await call(`/api/admin/content/course/${course.id}`, {token: adm, body: {draft: empty}});
+    assert.match((await call(`/api/admin/content/course/${course.id}/publish`, {token: adm, body: {}})).data.error, /bagian 1 masih kosong/);
+    course = (await call(`/api/admin/content/course/${course.id}`, {token: adm, body: {draft: course.draft}})).data.item;
+    await call(`/api/admin/content/course/${course.id}/publish`, {token: adm, body: {}});
+  });
+
+  await t.test('legacy plain-text sections are converted, not lost', async () => {
+    const cx = (await call('/api/admin/content/course/cx', {token: adm})).data.item;
+    assert.match(cx.draft.lessons[0].sections[0].html, /^<p>.+<\/p>$/);
+    await pg.query(`update content_items set published = jsonb_set(published, '{lessons,0,sections,0}', '{"heading":"Lama","body":"Baris <b>satu</b>"}'::jsonb) where kind='course' and id='cx'`);
+    const sec = (await call('/api/catalog', {token: lrn})).data.courses.find(c => c.id === 'cx').lessons[0].sections[0];
+    assert.equal(sec.body, 'Baris &lt;b&gt;satu&lt;/b&gt;'); assert.equal(sec.html, undefined);
+  });
+
   await t.test('validation errors are specific', async () => {
     const bad = structuredClone(course.draft); bad.lessons[0].sections = [{heading: 'x', image: {url: 'https://evil.example/x.png'}}];
     const r = await call(`/api/admin/content/course/${course.id}`, {token: adm, body: {draft: bad}});

@@ -1,6 +1,7 @@
 // Model konten LMS (course, quiz, artikel): normalisasi, validasi draft (longgar) dan publish (ketat).
 // Konten disimpan sebagai JSON di tabel content_items (kolom draft & published).
 import {HttpError} from './http.mjs';
+import {sanitizeRich, plainToHtml, hasRichContent} from './rich.mjs';
 
 export const KINDS = ['course', 'quiz', 'article'];
 export const COLORS = ['peach', 'sage', 'lavender', 'blue', 'sand', 'pink'];
@@ -53,7 +54,9 @@ function section(s, i, label, ctx) {
   const where = `${label}, bagian ${i + 1}`;
   if (Array.isArray(s)) s = {heading: s[0], body: s[1]}; // format lama [judul, isi]
   if (!s || typeof s !== 'object') bad(`${where} tidak valid.`);
-  const out = {heading: str(s.heading, 160, `${where}: judul`), body: str(s.body, 10000, `${where}: isi`)};
+  const raw = typeof s.html === 'string' ? s.html : plainToHtml(str(s.body, 10000, `${where}: isi`));
+  if (raw.length > 200000) bad(`${where}: isi terlalu panjang. Bagi menjadi beberapa bagian.`);
+  const out = {heading: str(s.heading, 160, `${where}: judul`), html: sanitizeRich(raw, {mediaPrefix: mediaPrefix(ctx.supabaseUrl)})};
   const imageUrl = str(s.image?.url ?? s.imageUrl, 600, `${where}: URL gambar`);
   if (imageUrl) {
     if (!imageUrl.startsWith(mediaPrefix(ctx.supabaseUrl)) || /["'<>\s]/.test(imageUrl)) bad(`${where}: gambar harus diunggah lewat tombol Unggah gambar.`);
@@ -130,7 +133,7 @@ export function forPublish(kind, d) {
     d.lessons.forEach((l, i) => {
       need(l.title, `Modul ${i + 1}: judul wajib diisi.`);
       need(l.intro || l.sections.length, `Modul ${i + 1}: isi pengantar atau minimal 1 bagian.`);
-      l.sections.forEach((s, j) => need(s.heading || s.body || s.image || s.video, `Modul ${i + 1}, bagian ${j + 1} masih kosong.`));
+      l.sections.forEach((s, j) => need(s.heading || hasRichContent(s.html) || s.image || s.video, `Modul ${i + 1}, bagian ${j + 1} masih kosong.`));
     });
     return {...d, label: d.category.toUpperCase(), minutes: d.lessons.reduce((n, l) => n + l.duration, 0)};
   }
@@ -149,9 +152,10 @@ export function forPublish(kind, d) {
 
 const ESC = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
 // Frontend peserta menyisipkan konten sebagai HTML; semua teks di-escape di server agar aman.
+// Pengecualian: kolom `html` sudah disaring ketat oleh sanitizeRich saat disimpan.
 export const escapeDeep = v => typeof v === 'string' ? v.replace(/[&<>"']/g, c => ESC[c])
   : Array.isArray(v) ? v.map(escapeDeep)
-  : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, escapeDeep(x)])) : v;
+  : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'html' && typeof x === 'string' ? x : escapeDeep(x)])) : v;
 
 export function slugify(title) {
   const s = String(title || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');

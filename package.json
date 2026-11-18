@@ -1,6 +1,6 @@
 {
   "name": "spun-learning-hub",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -13,10 +13,18 @@
   },
   "dependencies": {
     "@supabase/auth-js": "^2.119.0",
-    "postgres": "^3.4.7"
+    "postgres": "^3.4.7",
+    "sanitize-html": "^2.18.2"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.0",
+    "@tiptap/core": "^3.34.0",
+    "@tiptap/extension-image": "^3.34.0",
+    "@tiptap/extension-table": "^3.34.0",
+    "@tiptap/extension-text-align": "^3.34.0",
+    "@tiptap/extension-text-style": "^3.34.0",
+    "@tiptap/pm": "^3.34.0",
+    "@tiptap/starter-kit": "^3.34.0",
     "esbuild": "^0.27.0"
   }
 }

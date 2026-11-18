@@ -39,6 +39,43 @@
   const getPath = (o, p) => p.split('.').reduce((v, k) => v?.[k], o);
   const setPath = (o, p, val) => {const ks = p.split('.'); const last = ks.pop(); const t = ks.reduce((v, k) => v[k] ??= {}, o); if (val === undefined) delete t[last]; else t[last] = val;};
   const newId = () => 'm' + Math.random().toString(36).slice(2, 10);
+  const plainToHtml = t => String(t || '').split(/\n{2,}/).map(x => x.trim()).filter(Boolean).map(x => `<p>${esc(x).replace(/\n/g, '<br>')}</p>`).join('');
+  const sectionHtml = s => s.html ?? plainToHtml(s.body);
+  let rtes = [];
+  const destroyRtes = () => {rtes.forEach(r => {try {r.destroy();} catch {}}); rtes = [];};
+  function askText(label, value = '') {
+    return new Promise(resolve => {
+      showModal('Masukkan nilai', `<form id="ask-form" class="admin-form"><label>${esc(label)}<input name="v" value="${esc(value)}" autocomplete="off" /></label><div class="confirm-actions"><button type="button" class="btn btn-outline" data-ask="cancel">Batal</button><button class="btn btn-orange" type="submit">Simpan</button></div></form>`);
+      const form = $('#ask-form'), input = form.querySelector('input'); input.focus(); input.select();
+      let done = false; const finish = v => {if (done) return; done = true; modal.removeEventListener('close', onClose); closeModal(); resolve(v);};
+      const onClose = () => finish(null);
+      modal.addEventListener('close', onClose);
+      form.addEventListener('submit', e => {e.preventDefault(); finish(input.value);});
+      form.querySelector('[data-ask=cancel]').addEventListener('click', () => finish(null));
+    });
+  }
+  async function uploadFile(file) {
+    const {uploadUrl, publicUrl} = await api.post('/api/admin/media/upload-url', {contentType: file.type, size: file.size});
+    const form = new FormData(); form.append('cacheControl', '31536000'); form.append('', file);
+    const res = await fetch(uploadUrl, {method: 'PUT', body: form, headers: {'x-upsert': 'false'}});
+    if (!res.ok) throw new Error('Unggahan ditolak Supabase Storage (' + res.status + ').');
+    return publicUrl;
+  }
+  function mountRtes() {
+    if (!window.HubEditor) {toast('Editor teks gagal dimuat. Muat ulang halaman.', true); return;}
+    main.querySelectorAll('[data-rte]').forEach(el => {
+      const p = el.dataset.rte, s = getPath(editor.draft, p);
+      if (s.html === undefined) {s.html = plainToHtml(s.body); delete s.body;}
+      rtes.push(window.HubEditor.create(el, {
+        html: s.html,
+        onChange: h => {const t = getPath(editor.draft, p); if (t) {t.html = h; delete t.body;} markDirty();},
+        upload: uploadFile,
+        isOwnImage: src => /\/storage\/v1\/object\/public\/lms-media\//.test(src),
+        notify: (m, bad) => toast(m, bad),
+        ask: askText
+      }));
+    });
+  }
   const ytId = s => {
     s = String(s || '').trim(); if (!s) return ''; if (/^[A-Za-z0-9_-]{11}$/.test(s)) return s;
     try {const u = new URL(s), h = u.hostname.replace(/^www\.|^m\./, ''); let id = h === 'youtu.be' ? u.pathname.slice(1).split('/')[0] : u.pathname === '/watch' ? u.searchParams.get('v') : (u.pathname.match(/^\/(?:embed|shorts|live)\/([^/?#]+)/) || [])[1];
@@ -71,6 +108,7 @@
   }
   async function route() {
     const [page, a, b] = location.hash.slice(1).split('/');
+    destroyRtes();
     $('#sidebar').classList.remove('open'); $('#mobile-scrim').classList.remove('visible');
     try {
       if (page === 'edit' && KIND[a] && b) {nav('content/' + a); await openEditor(a, b);}
@@ -122,9 +160,9 @@
       e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)), btn = e.target.querySelector('[type=submit]'); btn.disabled = true;
       try {
         const draft = {...structuredClone(K.blank), title: f.title.trim(), category: f.category.trim()};
-        if (kind === 'course') {const id = newId(); draft.lessons = [{id, title: '', duration: 5, intro: '', sections: [{heading: '', body: ''}]}]; openKeys.add('L:' + id);}
+        if (kind === 'course') {const id = newId(); draft.lessons = [{id, title: '', duration: 5, intro: '', sections: [{heading: '', html: ''}]}]; openKeys.add('L:' + id);}
         if (kind === 'quiz') {draft.questions = [{q: '', options: ['', '', '', ''], answer: null, why: ''}]; openKeys.add('Q:0');}
-        if (kind === 'article') draft.sections = [{heading: '', body: ''}];
+        if (kind === 'article') draft.sections = [{heading: '', html: ''}];
         const {item} = await api.post(`/api/admin/content/${kind}`, {draft});
         closeModal(); location.hash = `#edit/${kind}/${item.id}`;
       } catch (err) {e.target.querySelector('.form-error').textContent = err.message; btn.disabled = false;}
@@ -153,9 +191,9 @@
       const vid = ytId(video);
       return `<div class="ed-section"><div class="ed-section-head"><strong>Bagian ${j + 1}</strong>${tools(base, j, list.length, 'bagian')}</div>
         ${fInput('Subjudul', `${p}.heading`, {max: 160, ph: 'Opsional'})}
-        ${fText('Isi', `${p}.body`, {rows: 5, max: 10000, hint: 'Pisahkan paragraf dengan satu baris kosong.'})}
+        <div class="ed-rte"><span class="ed-label">Isi</span><div class="rte-host" data-rte="${p}"></div><small class="ed-hint">Paste (Ctrl/Cmd+V) atau drag gambar langsung ke kolom isi. Tab / Shift+Tab mengatur indent di dalam list.</small></div>
         <div class="ed-media">
-          <div class="ed-media-col"><span class="ed-label">Gambar</span>${s.image?.url ? `<div class="ed-image"><img src="${esc(s.image.url)}" alt="" /><div>${fInput('Teks alternatif (deskripsi gambar)', `${p}.image.alt`, {max: 200})}${fInput('Keterangan (opsional)', `${p}.image.caption`, {max: 200})}<button type="button" class="btn btn-outline btn-danger-text" data-act="remove-image" data-path="${p}">Hapus gambar</button></div></div>` : `<button type="button" class="btn btn-outline" data-act="upload-image" data-path="${p}">Unggah gambar</button><small>PNG, JPG, WEBP, atau GIF · maks. 5 MB</small>`}</div>
+          <div class="ed-media-col"><span class="ed-label">Gambar utama bagian (opsional)</span>${s.image?.url ? `<div class="ed-image"><img src="${esc(s.image.url)}" alt="" /><div>${fInput('Teks alternatif (deskripsi gambar)', `${p}.image.alt`, {max: 200})}${fInput('Keterangan (opsional)', `${p}.image.caption`, {max: 200})}<button type="button" class="btn btn-outline btn-danger-text" data-act="remove-image" data-path="${p}">Hapus gambar</button></div></div>` : `<button type="button" class="btn btn-outline" data-act="upload-image" data-path="${p}">Unggah gambar</button><small>PNG, JPG, WEBP, atau GIF · maks. 5 MB</small>`}</div>
           <div class="ed-media-col"><label>Video YouTube<input data-f="${p}.video" data-video type="url" value="${esc(video)}" placeholder="https://www.youtube.com/watch?v=…" /><small class="${vid === null ? 'hint-bad' : vid ? 'hint-ok' : ''}" data-video-hint>${vid === null ? 'Link YouTube tidak dikenali.' : vid ? 'Video terdeteksi ✓' : 'Opsional. Tempel link video YouTube.'}</small></label></div>
         </div></div>`;
     }).join('')}<button type="button" class="btn btn-subtle" data-act="add-section" data-arr="${base}">+ Tambah bagian</button></div>`;
@@ -180,6 +218,7 @@
       ${fText('Pembahasan', `questions.${i}.why`, {rows: 2, max: 2000, hint: 'Ditampilkan ke peserta setelah quiz dikumpulkan.'})}</div></details>`;
   }
   function renderEditor() {
+    destroyRtes();
     const {kind, draft: d, status} = editor, K = KIND[kind];
     let body = '';
     if (kind === 'course') {
@@ -204,6 +243,7 @@
         <button class="btn btn-outline" data-act="save" id="btn-save">Simpan draft</button>
         <button class="btn btn-orange" data-act="publish" id="btn-publish">${status === 'draft' ? 'Publish' : 'Publish perubahan'}</button></div></div>
     </div>`;
+    mountRtes();
     updateBar();
   }
   function updateBar() {
@@ -251,7 +291,7 @@
   }
   function previewSections(sections) {
     return (sections || []).map(s => {
-      const paras = String(s.body || '').split(/\n{2,}/).filter(p => p.trim()).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
+      const paras = `<div class="rich">${sectionHtml(s)}</div>`; // HTML dari editor (sudah disaring server saat disimpan)
       const v = s.video ? ytId(s.video.url ?? s.video.youtubeId) : '';
       return `<section class="content-section">${s.heading ? `<h4>${esc(s.heading)}</h4>` : ''}${paras}${s.image?.url ? `<figure class="content-media"><img src="${esc(s.image.url)}" alt="${esc(s.image.alt)}" />${s.image.caption ? `<figcaption>${esc(s.image.caption)}</figcaption>` : ''}</figure>` : ''}${v ? `<div class="content-video"><iframe src="https://www.youtube-nocookie.com/embed/${v}" title="Video" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>` : ''}</section>`;
     }).join('');
@@ -263,10 +303,7 @@
       if (file.size > 5 * 1024 * 1024) return toast('Ukuran gambar maksimal 5 MB.', true);
       button.disabled = true; button.textContent = 'Mengunggah…';
       try {
-        const {uploadUrl, publicUrl} = await api.post('/api/admin/media/upload-url', {contentType: file.type, size: file.size});
-        const form = new FormData(); form.append('cacheControl', '31536000'); form.append('', file);
-        const res = await fetch(uploadUrl, {method: 'PUT', body: form, headers: {'x-upsert': 'false'}});
-        if (!res.ok) throw new Error('Unggahan ditolak Supabase Storage (' + res.status + ').');
+        const publicUrl = await uploadFile(file);
         setPath(editor.draft, path + '.image', {url: publicUrl, alt: '', caption: ''});
         markDirty(); renderEditor(); toast('Gambar terunggah. Isi teks alternatif, lalu simpan.');
       } catch (e) {toast(e.message || 'Gambar gagal diunggah.', true); button.disabled = false; button.textContent = 'Unggah gambar';}
@@ -373,9 +410,9 @@
         case 'save': b.disabled = true; await save(); break;
         case 'publish': b.disabled = true; await publish(); break;
         case 'reload-editor': {const {kind, id} = editor; editor = null; await openEditor(kind, id); break;}
-        case 'add-lesson': {const id = newId(); d.lessons.push({id, title: '', duration: 5, intro: '', sections: [{heading: '', body: ''}]}); openKeys.add('L:' + id); markDirty(); renderEditor(); break;}
+        case 'add-lesson': {const id = newId(); d.lessons.push({id, title: '', duration: 5, intro: '', sections: [{heading: '', html: ''}]}); openKeys.add('L:' + id); markDirty(); renderEditor(); break;}
         case 'add-question': d.questions.push({q: '', options: ['', '', '', ''], answer: null, why: ''}); openKeys.add('Q:' + (d.questions.length - 1)); markDirty(); renderEditor(); break;
-        case 'add-section': getPath(d, b.dataset.arr).push({heading: '', body: ''}); markDirty(); renderEditor(); break;
+        case 'add-section': getPath(d, b.dataset.arr).push({heading: '', html: ''}); markDirty(); renderEditor(); break;
         case 'add-option': d.questions[b.dataset.q].options.push(''); markDirty(); renderEditor(); break;
         case 'remove-option': {
           const q = d.questions[b.dataset.q], j = Number(b.dataset.i); q.options.splice(j, 1);

@@ -123,3 +123,25 @@ dialog{border:1px solid #e8eae2;border-radius:18px;padding:0;max-height:90vh;wid
   .done-card{padding:40px 22px}
 }
 @media (min-width:901px){.learn-outline>summary{display:none}}
+/* ---- Isi kaya (hasil editor teks) ---- */
+.rich{font-size:14.5px;line-height:1.9;color:#5f6d5a}
+.rich>*+*{margin-top:12px}
+.rich p{margin:0}
+.rich p[data-indent="1"]{padding-left:2em}.rich p[data-indent="2"]{padding-left:4em}.rich p[data-indent="3"]{padding-left:6em}.rich p[data-indent="4"]{padding-left:8em}
+.rich ul,.rich ol{padding-left:1.6em;margin:10px 0}
+.rich li>p{margin:0}
+.rich li+li{margin-top:4px}
+.rich ul ul,.rich ol ol,.rich ul ol,.rich ol ul{margin:4px 0}
+.rich strong{color:var(--ink);font-weight:650}
+.rich a{color:#c26a2c;text-decoration:underline;text-underline-offset:2px}
+.rich blockquote{border-left:3px solid #f1a56c;background:#fff8f1;margin:16px 0;padding:12px 18px;border-radius:0 10px 10px 0;color:#6b5a48}
+.rich hr{border:0;border-top:1px solid var(--line);margin:22px 0}
+.rich table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;display:block;overflow-x:auto}
+.rich table tbody,.rich table thead{display:table;width:100%;border-collapse:collapse}
+.rich th,.rich td{border:1px solid #e3e7df;padding:9px 11px;vertical-align:top;text-align:left;min-width:80px}
+.rich th{background:#f6f7f2;color:var(--ink);font-weight:650}
+.rich td>p,.rich th>p{margin:0}
+.rich img{display:block;max-width:100%;height:auto;margin:16px auto;border-radius:10px;border:1px solid #eceee8}
+.rich img[data-size="s"]{width:34%}.rich img[data-size="m"]{width:66%}.rich img[data-size="l"]{width:100%}
+@media (max-width:600px){.rich img[data-size="s"]{width:60%}.rich img[data-size="m"]{width:100%}.rich p[data-indent]{padding-left:1.2em}}
+.rich th,.rich td{height:2.6em}
