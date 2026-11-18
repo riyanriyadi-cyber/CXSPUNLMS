@@ -180,5 +180,40 @@ test('Admin panel API', async t => {
     assert.equal(r.quizzes.find(q => q.title === 'Quiz Schengen').passed, 1);
     assert.equal(r.users.length, 3);
   });
+  await t.test('raport: own raport for learners, any raport for admins, period filter', async () => {
+    const all = await call('/api/me/raport', {token: lrn});
+    assert.equal(all.status, 200);
+    assert.equal(all.data.user.email, 'tri@spun.global');
+    const c = all.data.courses.find(c => c.id === course.id);
+    assert.ok(c && c.done === 1 && c.total === 3 && c.percent === 33 && c.completedAt === null);
+    assert.equal(all.data.summary.lessonsCompleted, 1);
+    assert.equal(all.data.summary.minutes, 5);
+    const qz = all.data.quizzes.find(q => q.title === 'Quiz Schengen');
+    assert.deepEqual([qz.best, qz.last, qz.attempts, qz.passed], [100, 100, 1, true]);
+    assert.equal(all.data.summary.avgBest, 100);
+    assert.ok(all.data.weekly.weeks.length >= 1 && all.data.weekly.weeks.at(-1).minutes === 5 && all.data.weekly.weeks.at(-1).quizzes === 1);
+    // admin melihat raport peserta lain → sama
+    const viaAdmin = await call(`/api/admin/users/${L.id}/raport`, {token: adm});
+    assert.equal(viaAdmin.status, 200); assert.equal(viaAdmin.data.summary.lessonsCompleted, 1);
+    // peserta tidak bisa melihat raport orang lain
+    assert.equal((await call(`/api/admin/users/${ADM.id}/raport`, {token: lrn})).status, 403);
+    // periode di masa lalu: belum ada aktivitas, course belum diikuti
+    const past = await call('/api/me/raport?from=2020-01-01&to=2020-01-31', {token: lrn});
+    assert.equal(past.data.summary.lessonsCompleted, 0); assert.equal(past.data.courses.length, 0); assert.equal(past.data.quizzes.length, 0);
+    assert.deepEqual(past.data.period, {from: '2020-01-01', to: '2020-01-31'});
+    assert.equal(past.data.weekly.weeks.length, 5);
+    // data lama di luar periode tidak ikut; data lama sebelum periode tetap dihitung kumulatif untuk progres course
+    await pg.query(`update lesson_progress set completed_at = '2025-01-10T10:00:00+07:00' where user_id=$1`, [L.id]);
+    const thisYear = await call('/api/me/raport?from=2026-01-01', {token: lrn});
+    const c2 = thisYear.data.courses.find(c => c.id === course.id);
+    assert.equal(thisYear.data.summary.lessonsCompleted, 0); assert.equal(c2.done, 1); assert.equal(c2.lessonsInPeriod, 0);
+    // validasi
+    assert.equal((await call('/api/me/raport?from=2026-13-01', {token: lrn})).status, 422);
+    assert.equal((await call('/api/me/raport?from=2026-02-01&to=2026-01-01', {token: lrn})).status, 422);
+    // akun undangan yang belum pernah login tetap punya raport kosong
+    const invited = (await call('/api/admin/users', {token: adm})).data.users.find(u => u.status === 'invited');
+    const ri = await call(`/api/admin/users/${invited.id}/raport`, {token: adm});
+    assert.equal(ri.status, 200); assert.equal(ri.data.summary.coursesFollowed, 0);
+  });
   await pg.close();
 });

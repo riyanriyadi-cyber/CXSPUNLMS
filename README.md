@@ -12,6 +12,8 @@ Browser ──(login, undangan, reset)──▶ Supabase Auth
 
 ## Fitur
 
+**Raport:** setiap peserta punya raport pembelajaran (menu *Raport saya*); admin bisa membuka raport siapa pun dari menu Peserta. Filter periode (bulan ini, bulan lalu, 3 bulan, tahun ini, rentang tanggal), grafik aktivitas mingguan, tabel course & quiz, artikel dibaca, dan tombol **Unduh PDF** (cetak A4). Tanpa predikat; status lulus quiz = skor terbaik ≥ 80.
+
 **Peserta:** dashboard, course & modul (teks, gambar, video YouTube), quiz dengan skor dihitung server, Knowledge Center, bookmark, progres per akun. Detail course, modul, quiz, dan artikel tampil sebagai halaman penuh dengan alamat sendiri (bisa di-refresh, di-bookmark, dan memakai tombol Back), contoh: `#course/cx`, `#learn/cx/2`, `#quiz/cx-quiz`, `#knowledge/empathy`.
 
 **Admin** (menu *Admin panel* di sidebar, hanya untuk akun ber-role admin):
@@ -35,6 +37,8 @@ Keamanan: HTML dari editor disaring ketat di server (`server/rich.mjs`, daftar i
 | `server/admin.mjs` | API admin |
 | `server/content.mjs` | Model, validasi, dan escape materi |
 | `server/rich.mjs` | Penyaring HTML kolom Isi |
+| `server/raport.mjs` | Perhitungan raport per peserta & periode |
+| `public/raport.js` | Tampilan raport (dipakai aplikasi peserta & panel admin) |
 | `client/editor.js` | Editor teks panel admin (di-bundle menjadi `public/editor.js`) |
 | `server/supabase-admin.mjs` | Operasi dengan secret key (undang, nonaktifkan, URL unggah) |
 | `supabase/migrations/` | Migrasi database — jalankan berurutan |

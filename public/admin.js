@@ -113,6 +113,7 @@
     try {
       if (page === 'edit' && KIND[a] && b) {nav('content/' + a); await openEditor(a, b);}
       else if (page === 'users') {editor = null; nav('users'); await renderUsers();}
+      else if (page === 'raport' && a) {editor = null; nav('users'); await renderAdminRaport(a);}
       else if (page === 'report') {editor = null; nav('report'); await renderReport();}
       else {editor = null; const k = KIND[a] ? a : 'course'; nav('content/' + k); await renderList(k);}
     } catch (e) {main.innerHTML = `<div class="admin-denied"><h1>Belum dapat memuat.</h1><p>${esc(e.message)}</p><button class="btn btn-orange" data-act="reload">Coba lagi</button></div>`;}
@@ -329,7 +330,7 @@
       return `<tr><td><button class="row-title linkish" data-act="user-detail" data-id="${u.id}">${esc(u.name)}${self ? ' <small class="you">(kamu)</small>' : ''}</button><small>${esc(u.email)}</small></td>
         <td>${u.role === 'admin' ? badge(['Admin', 'st-admin']) : 'Peserta'}</td><td>${badge(USTATUS[u.status])}</td>
         <td>${u.lessonsCompleted} modul · ${u.quizzesPassed} quiz lulus</td><td><span class="when">${fmtDate(u.lastActivity || u.lastSignInAt)}</span></td>
-        <td class="col-actions">${self ? '<small>—</small>' : `
+        <td class="col-actions"><a class="btn btn-outline" href="#raport/${u.id}">Raport</a>${self ? '' : `
           ${u.status === 'invited' ? `<button class="btn btn-outline" data-act="resend" data-id="${u.id}">Kirim ulang undangan</button>` : ''}
           <button class="btn btn-outline" data-act="set-role" data-id="${u.id}" data-role="${u.role === 'admin' ? 'learner' : 'admin'}">${u.role === 'admin' ? 'Jadikan peserta' : 'Jadikan admin'}</button>
           <button class="btn btn-outline ${u.status === 'disabled' ? '' : 'btn-danger-text'}" data-act="set-status" data-id="${u.id}" data-status="${u.status === 'disabled' ? 'active' : 'disabled'}">${u.status === 'disabled' ? 'Aktifkan' : 'Nonaktifkan'}</button>`}</td></tr>`;
@@ -355,6 +356,26 @@
       <h3 class="ed-subhead">Progres course</h3><div class="progress-list">${d.courses.map(c => {const p = c.total ? Math.round(c.done / c.total * 100) : 0; return `<div class="progress-row"><span>${esc(c.title)}</span><div class="progress-track"><span style="width:${p}%"></span></div><b>${c.done}/${c.total}</b></div>`;}).join('') || '<p>Belum ada course tayang.</p>'}</div>
       <h3 class="ed-subhead">Quiz</h3><table class="admin-table compact"><thead><tr><th>Quiz</th><th>Skor terbaik</th><th>Percobaan</th><th>Terakhir</th></tr></thead><tbody>${d.quizzes.map(q => `<tr><td>${esc(q.title)}</td><td>${q.best === null ? '—' : `<b class="${q.best >= 80 ? 'pass' : 'fail'}">${q.best}</b>`}</td><td>${q.attempts}</td><td>${fmtDate(q.last)}</td></tr>`).join('')}</tbody></table>`, true);
   }
+
+  // ---------- raport peserta ----------
+  let raportState = {preset: 'all', custom: {}}, raportUser = null, raportSeq = 0, raportBound = false;
+  async function renderAdminRaport(id) {
+    const R = window.HubRaport;
+    if (!raportBound) {raportBound = true; R.bindTooltips(main);}
+    if (raportUser !== id) {raportUser = id;}
+    main.innerHTML = `<div class="content-fade raport-page"><a class="back-link" href="#users">← Semua peserta</a>${R.controls(raportState)}<div id="raport-body"><div class="raport-empty">Menyiapkan raport…</div></div></div>`;
+    $('#breadcrumb').textContent = 'Admin · Raport peserta';
+    const seq = ++raportSeq, r = R.range(raportState.preset, raportState.custom);
+    if (raportState.preset === 'custom' && (!r.from || !r.to)) {$('#raport-body').innerHTML = '<div class="raport-empty">Pilih tanggal awal dan akhir.</div>'; return;}
+    try {const data = await api.get(`/api/admin/users/${id}/raport${R.query(r)}`); if (seq === raportSeq) $('#raport-body').innerHTML = R.html(data);}
+    catch (e) {if (seq === raportSeq) $('#raport-body').innerHTML = `<div class="raport-empty">${esc(e.message)}</div>`;}
+  }
+  main.addEventListener('change', e => {
+    const k = e.target.dataset?.raport; if (!k || !location.hash.startsWith('#raport/')) return;
+    if (k === 'preset') raportState.preset = e.target.value; else raportState.custom[k] = e.target.value;
+    renderAdminRaport(location.hash.split('/')[1]);
+  });
+  main.addEventListener('click', e => {if (e.target.closest('[data-raport="print"]')) window.print();});
 
   // ---------- laporan ----------
   let report = null;
@@ -442,7 +463,7 @@
           showModal('Pratinjau artikel — tampilan peserta', `<div class="preview-stage"><div class="page-narrow"><article class="article-reader page-card"><div class="modal-kicker">${esc(d.category)}</div><h1>${esc(d.title)}</h1><div class="reader-meta"><span>SPUN Learning Team</span><span>${Number(d.minutes) || 0} menit baca</span></div><p class="reader-lead">${esc(d.description)}</p>${previewSections(d.sections)}<p class="sample-note">Pratinjau draft — peserta baru melihatnya setelah Publish.</p></article></div></div>`, 'full');
           break;
         case 'invite': inviteDialog(); break;
-        case 'user-detail': await userDetail(b.dataset.id); break;
+        case 'user-detail': location.hash = `#raport/${b.dataset.id}`; break;
         case 'set-role': {
           const u = users.find(x => x.id === b.dataset.id), toAdmin = b.dataset.role === 'admin';
           if (!await confirmBox(toAdmin ? `Jadikan ${u.name} admin? Admin bisa mengubah materi, mengundang, dan menonaktifkan peserta.` : `Cabut akses admin ${u.name}?`, toAdmin ? 'Jadikan admin' : 'Cabut akses', !toAdmin)) break;

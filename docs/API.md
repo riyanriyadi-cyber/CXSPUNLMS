@@ -17,6 +17,7 @@ Mutasi juga membutuhkan Content-Type: application/json, X-Learning-Hub: 1, dan O
 | POST | /api/articles/:id/read | Tandai dibaca |
 | POST | /api/quizzes/:id/attempts | Kumpulkan jawaban |
 | GET | /api/quizzes/:id/attempts | Maksimal 50 percobaan terakhir milik akun aktif |
+| GET | /api/me/raport?from=YYYY-MM-DD&to=YYYY-MM-DD | Raport akun sendiri (parameter opsional; tanpa parameter = seluruh waktu, zona WIB) |
 
 ## Body request
 
@@ -76,6 +77,7 @@ Semua endpoint `/api/admin/*` butuh akun dengan `role = 'admin'` (dicek di datab
 | GET | /api/admin/users | Semua akun (termasuk yang belum aktivasi) + ringkasan progres |
 | POST | /api/admin/users/invite | `{name, email, role}` kirim undangan |
 | GET | /api/admin/users/:id | Progres per course & quiz |
+| GET | /api/admin/users/:id/raport?from&to | Raport peserta mana pun (format sama dengan /api/me/raport) |
 | POST | /api/admin/users/:id/role | `{role: "admin" | "learner"}` |
 | POST | /api/admin/users/:id/status | `{status: "active" | "disabled"}` (juga ban/unban di Supabase Auth) |
 | POST | /api/admin/users/:id/resend | Kirim ulang undangan (hanya untuk yang belum pernah masuk) |

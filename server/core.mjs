@@ -1,18 +1,14 @@
 // API peserta: katalog (konten yang sudah publish), progres, bookmark, artikel dibaca, quiz.
 import {json, fail, sql, protectMutation, bodyJSON, HttpError} from './http.mjs';
 import {escapeDeep} from './content.mjs';
+import {loadCatalog} from './catalog.mjs';
+import {buildRaport, parsePeriod} from './raport.mjs';
 export {json, HttpError};
 
-const LIST = {course: 'courses', quiz: 'quizzes', article: 'articles'};
 const iso = v => v instanceof Date ? v.toISOString() : String(v);
 const parseJson = v => typeof v === 'string' ? JSON.parse(v) : v;
 
-export async function loadCatalog(db) {
-  const rows = await sql(db, 'SELECT kind,id,published,published_at FROM content_items WHERE published IS NOT NULL ORDER BY sort_order, created_at, id').all();
-  const catalog = {courses: [], quizzes: [], articles: []};
-  for (const r of rows.results) catalog[LIST[r.kind]]?.push({...parseJson(r.published), id: r.id, version: iso(r.published_at)});
-  return catalog;
-}
+export {loadCatalog};
 
 // Versi aman untuk browser: tanpa kunci jawaban/pembahasan, semua teks di-escape.
 export function safeCatalog(catalog) {
@@ -72,6 +68,7 @@ export async function api(request, {db, user, origin}) {
     protectMutation(request, origin);
     const catalog = await loadCatalog(db);
     if (path === '/api/catalog' && method === 'GET') return json(safeCatalog(catalog));
+    if (path === '/api/me/raport' && method === 'GET') return json(await buildRaport(db, user.id, parsePeriod(new URL(request.url)), catalog));
     if (path === '/api/me' && method === 'GET') return json({profile: {id: user.id, name: user.name, email: user.email, role: user.role || 'learner'}, state: await learningState(db, user.id, catalog)});
     let m;
     const now = new Date().toISOString();

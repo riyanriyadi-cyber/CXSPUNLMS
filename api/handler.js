@@ -23488,16 +23488,142 @@ function slugify(title) {
   return s.length >= 2 ? s : "konten";
 }
 
-// server/core.mjs
-var LIST = { course: "courses", quiz: "quizzes", article: "articles" };
+// server/catalog.mjs
 var iso = (v) => v instanceof Date ? v.toISOString() : String(v);
 var parseJson = (v) => typeof v === "string" ? JSON.parse(v) : v;
+var LIST = { course: "courses", quiz: "quizzes", article: "articles" };
 async function loadCatalog(db) {
   const rows = await sql(db, "SELECT kind,id,published,published_at FROM content_items WHERE published IS NOT NULL ORDER BY sort_order, created_at, id").all();
   const catalog = { courses: [], quizzes: [], articles: [] };
   for (const r of rows.results) catalog[LIST[r.kind]]?.push({ ...parseJson(r.published), id: r.id, version: iso(r.published_at) });
   return catalog;
 }
+
+// server/raport.mjs
+var DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+var iso2 = (v) => v == null ? null : v instanceof Date ? v.toISOString() : new Date(v).toISOString();
+var dayKey = (d) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(d));
+var mondayOf = (key) => {
+  const d = /* @__PURE__ */ new Date(key + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() - (d.getUTCDay() + 6) % 7);
+  return d.toISOString().slice(0, 10);
+};
+var addDays = (key, n) => {
+  const d = /* @__PURE__ */ new Date(key + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+var MAX_WEEKS = 26;
+function parsePeriod(url) {
+  const f = url.searchParams.get("from") || "", t = url.searchParams.get("to") || "";
+  if (f && !DAY_RE.test(f) || t && !DAY_RE.test(t)) fail(422, "Format tanggal harus YYYY-MM-DD.");
+  const from = f ? /* @__PURE__ */ new Date(`${f}T00:00:00+07:00`) : null, to = t ? /* @__PURE__ */ new Date(`${t}T23:59:59.999+07:00`) : null;
+  if (from && isNaN(from) || to && isNaN(to)) fail(422, "Tanggal tidak valid.");
+  if (from && to && from > to) fail(422, "Tanggal awal harus sebelum tanggal akhir.");
+  return { from, to, fromDay: f || null, toDay: t || null };
+}
+async function buildRaport(db, userId, period, catalog) {
+  catalog ||= await loadCatalog(db);
+  const { from, to } = period;
+  const u = await sql(db, "SELECT id,name,email,role,status,created_at FROM users WHERE id=?", userId).first() || fail(404, "Peserta tidak ditemukan.");
+  const [p, a, r, e] = await Promise.all([
+    sql(db, "SELECT course_id,lesson_id,completed_at FROM lesson_progress WHERE user_id=? ORDER BY completed_at", userId).all(),
+    sql(db, "SELECT quiz_id,score,created_at FROM quiz_attempts WHERE user_id=? ORDER BY created_at,attempt_id", userId).all(),
+    sql(db, "SELECT article_id,read_at FROM article_reads WHERE user_id=? ORDER BY read_at", userId).all(),
+    sql(db, "SELECT course_id,created_at FROM enrollments WHERE user_id=?", userId).all()
+  ]);
+  const t = (v) => new Date(v).getTime();
+  const inPeriod = (v) => (!from || t(v) >= from.getTime()) && (!to || t(v) <= to.getTime());
+  const upToEnd = (v) => !to || t(v) <= to.getTime();
+  const lessonEvents = [];
+  const courses = [];
+  for (const c of catalog.courses) {
+    const byId = new Map(c.lessons.map((l) => [l.id, l]));
+    const rows = p.results.filter((x) => x.course_id === c.id && byId.has(x.lesson_id));
+    const enrolled = e.results.find((x) => x.course_id === c.id);
+    const cumulative = rows.filter((x) => upToEnd(x.completed_at));
+    const startCandidates = [enrolled?.created_at, rows[0]?.completed_at].filter(Boolean).map(t);
+    const startedAt = startCandidates.length ? Math.min(...startCandidates) : null;
+    if (startedAt === null || to && startedAt > to.getTime()) continue;
+    const period2 = rows.filter((x) => inPeriod(x.completed_at));
+    for (const x of period2) lessonEvents.push({ at: x.completed_at, minutes: byId.get(x.lesson_id).duration });
+    const done = cumulative.length, total = c.lessons.length;
+    courses.push({
+      id: c.id,
+      title: c.title,
+      category: c.category,
+      done,
+      total,
+      percent: total ? Math.round(done / total * 100) : 0,
+      startedAt: iso2(startedAt),
+      completedAt: done === total && total ? iso2(Math.max(...cumulative.map((x) => t(x.completed_at)))) : null,
+      lessonsInPeriod: period2.length,
+      minutesInPeriod: period2.reduce((s, x) => s + byId.get(x.lesson_id).duration, 0)
+    });
+  }
+  const quizEvents = a.results.filter((x) => inPeriod(x.created_at) && catalog.quizzes.some((q) => q.id === x.quiz_id));
+  const quizzes = catalog.quizzes.map((q) => {
+    const rows = quizEvents.filter((x) => x.quiz_id === q.id);
+    if (!rows.length) return null;
+    const best = Math.max(...rows.map((x) => x.score)), last = rows[rows.length - 1];
+    return { id: q.id, title: q.title, category: q.category, best, last: last.score, attempts: rows.length, passed: best >= 80, firstAt: iso2(rows[0].created_at), lastAt: iso2(last.created_at) };
+  }).filter(Boolean);
+  const articles = r.results.filter((x) => inPeriod(x.read_at)).map((x) => {
+    const art = catalog.articles.find((a2) => a2.id === x.article_id);
+    return art ? { id: art.id, title: art.title, category: art.category, readAt: iso2(x.read_at) } : null;
+  }).filter(Boolean);
+  const allActivity = [...p.results.map((x) => x.completed_at), ...a.results.map((x) => x.created_at), ...r.results.map((x) => x.read_at)].filter(upToEnd).map(t);
+  const lastActivity = allActivity.length ? iso2(Math.max(...allActivity)) : null;
+  const endKey = dayKey(to || /* @__PURE__ */ new Date());
+  const firstKey = from ? dayKey(from) : dayKey(Math.min(t(u.created_at), ...allActivity.length ? allActivity : [Date.now()]));
+  let startWeek = mondayOf(firstKey);
+  const endWeek = mondayOf(endKey);
+  let truncated = false;
+  const span = Math.round((t(endWeek) - t(startWeek)) / 6048e5) + 1;
+  if (span > MAX_WEEKS) {
+    startWeek = addDays(endWeek, -7 * (MAX_WEEKS - 1));
+    truncated = true;
+  }
+  const weeks = [];
+  for (let w = startWeek; w <= endWeek; w = addDays(w, 7)) weeks.push({ week: w, minutes: 0, lessons: 0, quizzes: 0 });
+  const bucket = (at) => weeks.find((x) => x.week === mondayOf(dayKey(at)));
+  for (const ev of lessonEvents) {
+    const b2 = bucket(ev.at);
+    if (b2) {
+      b2.minutes += ev.minutes;
+      b2.lessons++;
+    }
+  }
+  for (const ev of quizEvents) {
+    const b2 = bucket(ev.created_at);
+    if (b2) b2.quizzes++;
+  }
+  const bests = quizzes.map((q) => q.best);
+  return {
+    user: { id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, joinedAt: iso2(u.created_at), lastActivity },
+    period: { from: period.fromDay, to: period.toDay },
+    summary: {
+      coursesAvailable: catalog.courses.length,
+      coursesFollowed: courses.length,
+      coursesCompleted: courses.filter((c) => c.completedAt).length,
+      lessonsCompleted: lessonEvents.length,
+      minutes: lessonEvents.reduce((s, x) => s + x.minutes, 0),
+      quizzesAttempted: quizzes.length,
+      quizzesPassed: quizzes.filter((q) => q.passed).length,
+      avgBest: bests.length ? Math.round(bests.reduce((s, x) => s + x, 0) / bests.length) : null,
+      articlesRead: articles.length
+    },
+    courses,
+    quizzes,
+    articles,
+    weekly: { weeks, truncated },
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+
+// server/core.mjs
+var iso3 = (v) => v instanceof Date ? v.toISOString() : String(v);
+var parseJson2 = (v) => typeof v === "string" ? JSON.parse(v) : v;
 function safeCatalog(catalog) {
   return escapeDeep({
     courses: catalog.courses.map(({ version, ...c }) => c),
@@ -23529,7 +23655,7 @@ async function learningState(db, userId, catalog) {
   for (const row of a.results) {
     if (!has(catalog.quizzes, row.quiz_id)) continue;
     const prev = results[row.quiz_id];
-    results[row.quiz_id] = { score: Math.max(prev?.score || 0, row.score), lastScore: row.score, attempts: (prev?.attempts || 0) + 1, date: iso(row.created_at) };
+    results[row.quiz_id] = { score: Math.max(prev?.score || 0, row.score), lastScore: row.score, attempts: (prev?.attempts || 0) + 1, date: iso3(row.created_at) };
   }
   return {
     version: 3,
@@ -23543,8 +23669,8 @@ async function learningState(db, userId, catalog) {
   };
 }
 function attemptResult(record) {
-  const review = parseJson(record.review);
-  return escapeDeep({ id: record.attempt_id, score: record.score, correct: review.filter((r) => r.correct).length, total: review.length, passed: record.score >= 80, answers: parseJson(record.answers), review, quizId: record.quiz_id, createdAt: iso(record.created_at) });
+  const review = parseJson2(record.review);
+  return escapeDeep({ id: record.attempt_id, score: record.score, correct: review.filter((r) => r.correct).length, total: review.length, passed: record.score >= 80, answers: parseJson2(record.answers), review, quizId: record.quiz_id, createdAt: iso3(record.created_at) });
 }
 async function api(request, { db, user, origin }) {
   try {
@@ -23553,6 +23679,7 @@ async function api(request, { db, user, origin }) {
     protectMutation(request, origin);
     const catalog = await loadCatalog(db);
     if (path === "/api/catalog" && method === "GET") return json(safeCatalog(catalog));
+    if (path === "/api/me/raport" && method === "GET") return json(await buildRaport(db, user.id, parsePeriod(new URL(request.url)), catalog));
     if (path === "/api/me" && method === "GET") return json({ profile: { id: user.id, name: user.name, email: user.email, role: user.role || "learner" }, state: await learningState(db, user.id, catalog) });
     let m;
     const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -23602,8 +23729,8 @@ async function api(request, { db, user, origin }) {
 
 // server/admin.mjs
 import { randomUUID } from "node:crypto";
-var iso2 = (v) => v == null ? null : v instanceof Date ? v.toISOString() : String(v);
-var parseJson2 = (v) => typeof v === "string" ? JSON.parse(v) : v;
+var iso4 = (v) => v == null ? null : v instanceof Date ? v.toISOString() : String(v);
+var parseJson3 = (v) => typeof v === "string" ? JSON.parse(v) : v;
 var EMAIL_RE = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
 var NAME_RE = /^[\p{L}\p{N} .,'()-]{2,80}$/u;
 var IMAGE_TYPES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" };
@@ -23612,7 +23739,7 @@ function status(row) {
   return row.revision > row.published_revision ? "changed" : "published";
 }
 function summary(row) {
-  const d = parseJson2(row.draft);
+  const d = parseJson3(row.draft);
   return {
     kind: row.kind,
     id: row.id,
@@ -23622,8 +23749,8 @@ function summary(row) {
     status: status(row),
     revision: row.revision,
     sortOrder: row.sort_order,
-    updatedAt: iso2(row.updated_at),
-    publishedAt: iso2(row.published_at),
+    updatedAt: iso4(row.updated_at),
+    publishedAt: iso4(row.published_at),
     updatedBy: row.updated_by_name || null
   };
 }
@@ -23632,7 +23759,7 @@ async function getItem(db, kind, id) {
   const row = await sql(db, `SELECT ${CONTENT_COLUMNS} FROM content_items c LEFT JOIN users u ON u.id=c.updated_by WHERE c.kind=? AND c.id=?`, kind, id).first();
   return row || fail(404, "Konten tidak ditemukan.");
 }
-var full = (row) => ({ ...summary(row), draft: parseJson2(row.draft) });
+var full = (row) => ({ ...summary(row), draft: parseJson3(row.draft) });
 async function userList(db) {
   const rows = await sql(db, `SELECT au.id, au.email, au.created_at, au.last_sign_in_at,
       COALESCE(u.name, au.raw_user_meta_data->>'full_name', split_part(au.email,'@',1)) AS name,
@@ -23649,9 +23776,9 @@ async function userList(db) {
     email: r.email,
     role: r.role,
     status: r.status === "disabled" ? "disabled" : r.last_sign_in_at ? "active" : "invited",
-    createdAt: iso2(r.created_at),
-    lastSignInAt: iso2(r.last_sign_in_at),
-    lastActivity: iso2(r.last_activity),
+    createdAt: iso4(r.created_at),
+    lastSignInAt: iso4(r.last_sign_in_at),
+    lastActivity: iso4(r.last_activity),
     coursesEnrolled: Number(r.courses_enrolled),
     lessonsCompleted: Number(r.lessons_completed),
     quizzesPassed: Number(r.quizzes_passed)
@@ -23666,7 +23793,7 @@ async function ensureRow(db, u) {
 }
 async function publishedCatalogLite(db) {
   const rows = await sql(db, "SELECT kind,id,published FROM content_items WHERE published IS NOT NULL ORDER BY sort_order, created_at, id").all();
-  return rows.results.map((r) => ({ kind: r.kind, id: r.id, ...parseJson2(r.published) }));
+  return rows.results.map((r) => ({ kind: r.kind, id: r.id, ...parseJson3(r.published) }));
 }
 async function adminApi(request, { db, user, origin, config: config2, admin }) {
   try {
@@ -23706,7 +23833,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
         const draft = normalize(kind, body.draft, ctx);
         await sql(db, "UPDATE content_items SET draft=?::jsonb, revision=revision+1, updated_at=now(), updated_by=? WHERE kind=? AND id=?", JSON.stringify(draft), user.id, kind, id).run();
       } else if (action === "publish") {
-        const draft = normalize(kind, parseJson2(row.draft), ctx);
+        const draft = normalize(kind, parseJson3(row.draft), ctx);
         if (kind === "quiz" && draft.course) {
           const course = await sql(db, "SELECT 1 AS x FROM content_items WHERE kind=? AND id=? AND published IS NOT NULL", "course", draft.course).first();
           if (!course) fail(422, "Course terkait quiz ini belum tayang. Publish course-nya dulu atau kosongkan pilihan course.");
@@ -23744,6 +23871,11 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
       await sql(db, "INSERT INTO users(id,name,email,role,created_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role", id, name, email, role, (/* @__PURE__ */ new Date()).toISOString()).run();
       return json({ ok: true, users: await userList(db) }, 201);
     }
+    if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/raport$/)) && method === "GET") {
+      const u = await authUser(db, m[1]);
+      await ensureRow(db, u);
+      return json(await buildRaport(db, u.id, parsePeriod(url)));
+    }
     if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})$/)) && method === "GET") {
       const u = await authUser(db, m[1]);
       const catalog = await publishedCatalogLite(db);
@@ -23758,7 +23890,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
       });
       const quizzes = catalog.filter((q) => q.kind === "quiz").map((q) => {
         const x = a.results.find((x2) => x2.quiz_id === q.id);
-        return { id: q.id, title: q.title, best: x ? Number(x.best) : null, attempts: x ? Number(x.attempts) : 0, last: iso2(x?.last) };
+        return { id: q.id, title: q.title, best: x ? Number(x.best) : null, attempts: x ? Number(x.attempts) : 0, last: iso4(x?.last) };
       });
       return json({ user: { id: u.id, name: u.name, email: u.email }, courses, quizzes, articlesRead: Number(r.n) });
     }

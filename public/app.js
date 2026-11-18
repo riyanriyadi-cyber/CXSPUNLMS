@@ -79,7 +79,7 @@
   let quizResult=null,pendingHash=null,lastHash=location.hash;
   const hashParts=()=>location.hash.slice(1).split('/').map(s=>{try{return decodeURIComponent(s);}catch{return s;}});
   const main=$('#main'),modal=$('#modal');
-  const navs=[['dashboard','dashboard','Dashboard'],['course','book','Course'],['quiz','quiz','Quiz'],['knowledge','articles','Knowledge Center']];
+  const navs=[['dashboard','dashboard','Dashboard'],['course','book','Course'],['quiz','quiz','Quiz'],['knowledge','articles','Knowledge Center'],['raport','chart','Raport saya']];
   function nav(){ $('#main-nav').innerHTML=navs.map(([id,ic,name])=>`<a class="nav-item ${route===id?'active':''}" href="#${id}" ${route===id?'aria-current="page"':''}>${icon(ic)}<span>${name}</span>${id==='quiz'?`<span class="nav-count">${quizzes.length}</span>`:''}</a>`).join('')+(profile.role==='admin'?`<a class="nav-item nav-admin" href="/admin.html">${icon('users')}<span>Admin panel</span></a>`:'');$('#breadcrumb').textContent=navs.find(n=>n[0]===route)?.[2]||'Dashboard'; }
   function go(h){closeModal();closeSidebar();if(location.hash==='#'+h)routeChanged();else location.hash=h;}
   function dateLabel(){return `<div class="date-label">${icon('calendar')}${esc(new Intl.DateTimeFormat('id-ID',{day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Jakarta'}).format(new Date()))}</div>`;}
@@ -104,7 +104,13 @@
   function renderArticleResults(){const list=articles.filter(a=>(articleTab==='all'||state.savedArticles.includes(a.id))&&(articleCategory==='all'||a.category===articleCategory)&&`${a.title} ${a.description} ${a.category}`.toLowerCase().includes(articleQuery.toLowerCase()));$('#article-results').innerHTML=`<p class="results-count" aria-live="polite">${list.length} artikel ditemukan</p><div class="article-grid">${list.length?list.map(articleCard).join(''):empty(articleTab==='saved'?'Belum ada artikel yang disimpan.':'Artikel tidak ditemukan.','Simpan artikel favoritmu atau coba kata kunci dan topik lain.','reset-articles')}</div>`;}
   function render(){nav();const [p0,p1,p2]=hashParts();
     if(p0==='learn'&&p1)renderLesson(p1,p2);else if(route==='course'&&p1)renderCourseDetail(p1);else if(route==='quiz'&&p1)renderQuizPage(p1);else if(route==='knowledge'&&p1)renderArticlePage(p1);
-    else if(route==='course')renderCourses();else if(route==='quiz')renderQuizzes();else if(route==='knowledge')renderKnowledge();else dashboard();}
+    else if(route==='course')renderCourses();else if(route==='quiz')renderQuizzes();else if(route==='knowledge')renderKnowledge();else if(route==='raport')renderRaport();else dashboard();}
+  let raportState={preset:'all',custom:{}},raportSeq=0,raportBound=false;
+  async function renderRaport(){const R=window.HubRaport;if(!R){main.innerHTML=empty('Raport belum dapat dimuat.','Muat ulang halaman.','');return;}
+    if(!raportBound){raportBound=true;R.bindTooltips(main);}
+    main.innerHTML=`<div class="content-fade raport-page">${pageHeading('Your learning journey','Raport saya','Ringkasan perjalanan belajarmu: course, quiz, dan artikel. Unduh sebagai PDF bila perlu.')}${R.controls(raportState)}<div id="raport-body"><div class="raport-empty">Menyiapkan raport…</div></div></div>`;
+    const seq=++raportSeq,r=R.range(raportState.preset,raportState.custom);if(raportState.preset==='custom'&&(!r.from||!r.to)){$('#raport-body').innerHTML='<div class="raport-empty">Pilih tanggal awal dan akhir.</div>';return;}
+    try{const data=await window.hubRequest('/api/me/raport'+R.query(r));if(seq!==raportSeq||route!=='raport')return;$('#raport-body').innerHTML=R.html(data);}catch(e){if(seq===raportSeq)$('#raport-body').innerHTML=`<div class="raport-empty">${esc(e.message)}</div>`;}}
   function routeChanged(){const [p0,p1]=hashParts();
     if(quizSession&&!(p0==='quiz'&&p1===quizSession.id)){pendingHash=location.hash;history.replaceState(null,'',lastHash||'#dashboard');showExitQuiz();return;}
     if(quizResult&&!(p0==='quiz'&&p1===quizResult.quizId))quizResult=null;
@@ -184,6 +190,8 @@
     case 'notifications':notifications();break;
   }}catch(error){toast(error.message||'Perubahan belum tersimpan. Coba lagi.');}finally{if(b.isConnected&&!(action==='read-article'&&state.readArticles.includes(id)))b.disabled=false;}});
   document.addEventListener('input',e=>{if(e.target.id==='course-search'){courseQuery=e.target.value;renderCourseResults();}if(e.target.id==='article-search'){articleQuery=e.target.value;renderArticleResults();}});
+  document.addEventListener('change',e=>{const k=e.target.dataset?.raport;if(k&&route==='raport'){if(k==='preset'){raportState.preset=e.target.value;$('.raport-custom').hidden=raportState.preset!=='custom';}else raportState.custom[k]=e.target.value;renderRaport();return;}});
+  document.addEventListener('click',e=>{if(e.target.closest('[data-raport="print"]'))window.print();});
   document.addEventListener('change',e=>{if(e.target.id==='course-category'){courseCategory=e.target.value;renderCourseResults();}if(e.target.id==='course-sort'){courseSort=e.target.value;renderCourseResults();}if(e.target.name==='quiz-answer'&&quizSession){quizSession.answers[quizSession.index]=Number(e.target.value);$('#quiz-next').disabled=false;$('.quiz-progress-top>span:last-child').textContent=quizSession.answers.filter(v=>v!==null).length+' terjawab';}});
   $('#global-search-form').addEventListener('submit',e=>{e.preventDefault();openSearch($('#global-search').value);});
   $('.skip-link').addEventListener('click',e=>{e.preventDefault();main.focus();main.scrollIntoView({behavior:'smooth'});});

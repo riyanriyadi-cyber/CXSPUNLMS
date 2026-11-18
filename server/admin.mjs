@@ -3,6 +3,7 @@
 import {randomUUID} from 'node:crypto';
 import {json, fail, sql, protectMutation, bodyJSON, HttpError} from './http.mjs';
 import {KINDS, ID_RE, normalize, forPublish, slugify, mediaPrefix} from './content.mjs';
+import {buildRaport, parsePeriod} from './raport.mjs';
 
 const iso = v => v == null ? null : v instanceof Date ? v.toISOString() : String(v);
 const parseJson = v => typeof v === 'string' ? JSON.parse(v) : v;
@@ -142,6 +143,11 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
       const {id} = await admin.invite(email, {name, redirectTo: origin + '/'});
       await sql(db, 'INSERT INTO users(id,name,email,role,created_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role', id, name, email, role, new Date().toISOString()).run();
       return json({ok: true, users: await userList(db)}, 201);
+    }
+    if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/raport$/)) && method === 'GET') {
+      const u = await authUser(db, m[1]);
+      await ensureRow(db, u);
+      return json(await buildRaport(db, u.id, parsePeriod(url)));
     }
     if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})$/)) && method === 'GET') {
       const u = await authUser(db, m[1]);
