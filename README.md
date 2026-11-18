@@ -28,7 +28,8 @@ Keamanan: HTML dari editor disaring ketat di server (`server/rich.mjs`, daftar i
 | `public/index.html`, `app.js`, `styles.css` | Aplikasi peserta |
 | `public/admin.html`, `admin.js`, `admin.css` | Panel admin |
 | `client/auth.js` | Login/undangan/reset (di-bundle menjadi `public/auth.js` saat build) |
-| `api/handler.js` | Vercel Function untuk semua `/api/*` |
+| `api/handler.js` | Vercel Function untuk semua `/api/*` — **file hasil build** (bundle satu file dari `server/`). Setelah mengubah apa pun di `server/`, jalankan `npm run build:api` lalu commit file ini |
+| `server/vercel-entry.mjs` | Sumber Vercel Function sebelum di-bundle |
 | `server/app.mjs` | Verifikasi token, role & status, routing |
 | `server/core.mjs` | API peserta |
 | `server/admin.mjs` | API admin |
@@ -82,6 +83,7 @@ Keamanan: HTML dari editor disaring ketat di server (`server/rich.mjs`, daftar i
 npm install
 cp .env.example .env   # isi variabel Supabase
 npm run dev            # http://localhost:4173
+npm run build:api      # wajib setelah mengubah folder server/
 npm test               # tidak butuh Supabase
 ```
 
