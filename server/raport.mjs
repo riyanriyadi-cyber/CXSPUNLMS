@@ -26,7 +26,7 @@ export async function buildRaport(db, userId, period, catalog) {
   const u = await sql(db, 'SELECT id,name,email,role,status,created_at FROM users WHERE id=?', userId).first() || fail(404, 'Peserta tidak ditemukan.');
   const [p, a, r, e] = await Promise.all([
     sql(db, 'SELECT course_id,lesson_id,completed_at FROM lesson_progress WHERE user_id=? ORDER BY completed_at', userId).all(),
-    sql(db, 'SELECT quiz_id,score,created_at FROM quiz_attempts WHERE user_id=? ORDER BY created_at,attempt_id', userId).all(),
+    sql(db, 'SELECT quiz_id,score,status,created_at FROM quiz_attempts WHERE user_id=? ORDER BY created_at,attempt_id', userId).all(),
     sql(db, 'SELECT article_id,read_at FROM article_reads WHERE user_id=? ORDER BY read_at', userId).all(),
     sql(db, 'SELECT course_id,created_at FROM enrollments WHERE user_id=?', userId).all()
   ]);
@@ -56,10 +56,11 @@ export async function buildRaport(db, userId, period, catalog) {
 
   const quizEvents = a.results.filter(x => inPeriod(x.created_at) && catalog.quizzes.some(q => q.id === x.quiz_id));
   const quizzes = catalog.quizzes.map(q => {
-    const rows = quizEvents.filter(x => x.quiz_id === q.id);
-    if (!rows.length) return null;
-    const best = Math.max(...rows.map(x => x.score)), last = rows[rows.length - 1];
-    return {id: q.id, title: q.title, category: q.category, best, last: last.score, attempts: rows.length, passed: best >= 80, firstAt: iso(rows[0].created_at), lastAt: iso(last.created_at)};
+    const all = quizEvents.filter(x => x.quiz_id === q.id);
+    if (!all.length) return null;
+    const rows = all.filter(x => x.status !== 'pending'), pending = all.length - rows.length;
+    const best = rows.length ? Math.max(...rows.map(x => x.score)) : null, last = rows[rows.length - 1];
+    return {id: q.id, title: q.title, category: q.category, best, last: last ? last.score : null, attempts: all.length, pending, passed: best !== null && best >= 80, firstAt: iso(all[0].created_at), lastAt: iso(all[all.length - 1].created_at)};
   }).filter(Boolean);
 
   const articles = r.results.filter(x => inPeriod(x.read_at)).map(x => {
@@ -83,14 +84,14 @@ export async function buildRaport(db, userId, period, catalog) {
   for (const ev of lessonEvents) {const b = bucket(ev.at); if (b) {b.minutes += ev.minutes; b.lessons++;}}
   for (const ev of quizEvents) {const b = bucket(ev.created_at); if (b) b.quizzes++;}
 
-  const bests = quizzes.map(q => q.best);
+  const bests = quizzes.map(q => q.best).filter(b => b !== null);
   return {
     user: {id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, joinedAt: iso(u.created_at), lastActivity},
     period: {from: period.fromDay, to: period.toDay},
     summary: {
       coursesAvailable: catalog.courses.length, coursesFollowed: courses.length, coursesCompleted: courses.filter(c => c.completedAt).length,
       lessonsCompleted: lessonEvents.length, minutes: lessonEvents.reduce((s, x) => s + x.minutes, 0),
-      quizzesAttempted: quizzes.length, quizzesPassed: quizzes.filter(q => q.passed).length,
+      quizzesAttempted: quizzes.length, quizzesPending: quizzes.filter(q => q.pending && q.best === null).length, quizzesPassed: quizzes.filter(q => q.passed).length,
       avgBest: bests.length ? Math.round(bests.reduce((s, x) => s + x, 0) / bests.length) : null,
       articlesRead: articles.length
     },

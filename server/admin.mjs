@@ -154,7 +154,7 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
       const catalog = await publishedCatalogLite(db);
       const [p, a, r] = await Promise.all([
         sql(db, 'SELECT course_id,lesson_id FROM lesson_progress WHERE user_id=?', u.id).all(),
-        sql(db, 'SELECT quiz_id,max(score) AS best,count(*) AS attempts,max(created_at) AS last FROM quiz_attempts WHERE user_id=? GROUP BY quiz_id', u.id).all(),
+        sql(db, "SELECT quiz_id,max(score) AS best,count(*) AS attempts,max(created_at) AS last FROM quiz_attempts WHERE user_id=? AND status='graded' GROUP BY quiz_id", u.id).all(),
         sql(db, 'SELECT count(*) AS n FROM article_reads WHERE user_id=?', u.id).first()
       ]);
       const courses = catalog.filter(c => c.kind === 'course').map(c => {
@@ -194,12 +194,14 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
       const conds = [], args = [];
       if (period.from) {conds.push('created_at >= ?'); args.push(period.from.toISOString());}
       if (period.to) {conds.push('created_at <= ?'); args.push(period.to.toISOString());}
-      const rows = await sql(db, `SELECT user_id,quiz_id,score,created_at FROM quiz_attempts ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''} ORDER BY created_at, attempt_id`, ...args).all();
+      const rows = await sql(db, `SELECT user_id,quiz_id,score,status,created_at FROM quiz_attempts ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''} ORDER BY created_at, attempt_id`, ...args).all();
       const cells = {};
       for (const r of rows.results) {
         if (!ids.has(r.quiz_id)) continue;
-        const u = cells[r.user_id] ||= {}, c = u[r.quiz_id] ||= {best: 0, last: 0, attempts: 0, lastAt: null};
-        c.best = Math.max(c.best, r.score); c.last = r.score; c.attempts++; c.lastAt = iso(r.created_at);
+        const u = cells[r.user_id] ||= {}, c = u[r.quiz_id] ||= {best: null, last: null, attempts: 0, pending: 0, lastAt: null};
+        c.attempts++; c.lastAt = iso(r.created_at);
+        if (r.status === 'pending') {c.pending++; continue;}
+        c.best = Math.max(c.best ?? 0, r.score); c.last = r.score;
       }
       const users = (await userList(db)).map(({id, name, email, role, status}) => ({id, name, email, role, status}));
       return json({quizzes: catalog.map(q => ({id: q.id, title: q.title, category: q.category, questions: q.questions.length})), users, cells, period: {from: period.fromDay, to: period.toDay}, generatedAt: new Date().toISOString()});
@@ -211,7 +213,7 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
       const [p, e, a] = await Promise.all([
         sql(db, 'SELECT user_id,course_id,lesson_id FROM lesson_progress').all(),
         sql(db, 'SELECT user_id,course_id FROM enrollments').all(),
-        sql(db, 'SELECT user_id,quiz_id,max(score) AS best,count(*) AS attempts FROM quiz_attempts GROUP BY user_id,quiz_id').all()
+        sql(db, "SELECT user_id,quiz_id,max(score) AS best,count(*) AS attempts FROM quiz_attempts WHERE status='graded' GROUP BY user_id,quiz_id").all()
       ]);
       const courses = catalog.filter(c => c.kind === 'course').map(c => {
         const ids = new Set(c.lessons.map(l => l.id)), per = new Map();
@@ -227,6 +229,110 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
         return {id: q.id, title: q.title, takers: rows.length, passed: rows.filter(x => Number(x.best) >= 80).length, avgBest: rows.length ? Math.round(rows.reduce((s, x) => s + Number(x.best), 0) / rows.length) : null, attempts: rows.reduce((s, x) => s + Number(x.attempts), 0)};
       });
       return json({courses, quizzes, users: await userList(db), generatedAt: new Date().toISOString()});
+    }
+    // ---------- Penilaian essay ----------
+    const QUIZ_TITLE = "COALESCE(ci.published->>'title', ci.draft->>'title', a.quiz_id)";
+    if (path === '/api/admin/grading/count' && method === 'GET') {
+      const r = await sql(db, "SELECT count(*) AS n FROM quiz_attempts WHERE status='pending'").first();
+      return json({pending: Number(r.n)});
+    }
+    if (path === '/api/admin/grading' && method === 'GET') {
+      const graded = url.searchParams.get('status') === 'graded';
+      const rows = await sql(db, `SELECT a.user_id,a.attempt_id,a.quiz_id,a.created_at,a.graded_at,a.score,a.status,u.name,u.email,g.name AS grader,${QUIZ_TITLE} AS quiz_title
+        FROM quiz_attempts a JOIN users u ON u.id=a.user_id LEFT JOIN users g ON g.id=a.graded_by LEFT JOIN content_items ci ON ci.kind='quiz' AND ci.id=a.quiz_id
+        WHERE ${graded ? "a.status='graded' AND a.review LIKE '%\"type\":\"essay\"%'" : "a.status='pending'"}
+        ORDER BY ${graded ? 'a.graded_at DESC NULLS LAST' : 'a.created_at ASC'} LIMIT 200`).all();
+      return json({items: rows.results.map(r => ({userId: r.user_id, attemptId: r.attempt_id, quizId: r.quiz_id, quizTitle: r.quiz_title, name: r.name, email: r.email, createdAt: iso(r.created_at), gradedAt: iso(r.graded_at), score: r.score, status: r.status, grader: r.grader}))});
+    }
+    if ((m = path.match(/^\/api\/admin\/grading\/([0-9a-f-]{36})\/([0-9a-f-]{36})$/))) {
+      const [, uid, aid] = m;
+      const rec = await sql(db, `SELECT a.*,u.name,u.email,g.name AS grader,${QUIZ_TITLE} AS quiz_title FROM quiz_attempts a JOIN users u ON u.id=a.user_id LEFT JOIN users g ON g.id=a.graded_by LEFT JOIN content_items ci ON ci.kind='quiz' AND ci.id=a.quiz_id WHERE a.user_id=? AND a.attempt_id=?`, uid, aid).first() || fail(404, 'Percobaan quiz tidak ditemukan.');
+      const review = parseJson(rec.review);
+      if (!review.some(r => r.type === 'essay')) fail(409, 'Percobaan ini tidak berisi essay.');
+      if (method === 'POST') {
+        const body = await bodyJSON(request, 128 * 1024);
+        if (!Array.isArray(body.grades)) fail(422, 'Data nilai tidak valid.');
+        review.forEach((r, i) => {
+          if (r.type !== 'essay') return;
+          const g = body.grades.find(x => x && x.index === i);
+          const earned = g ? Number(g.earned) : NaN;
+          if (!Number.isFinite(earned) || earned < 0 || earned > r.points || Math.round(earned * 2) !== earned * 2) fail(422, `Pertanyaan ${i + 1}: isi nilai 0–${r.points} (kelipatan 0,5).`);
+          const feedback = typeof g.feedback === 'string' ? g.feedback.trim() : '';
+          if (feedback.length > 2000) fail(422, `Pertanyaan ${i + 1}: komentar maksimal 2.000 karakter.`);
+          r.earned = earned; r.feedback = feedback;
+        });
+        const max = review.reduce((s, r) => s + r.points, 0), earned = review.reduce((s, r) => s + (r.earned || 0), 0);
+        const score = Math.round(earned / max * 100);
+        await sql(db, "UPDATE quiz_attempts SET review=?, score=?, status='graded', earned_points=?, max_points=?, graded_at=now(), graded_by=? WHERE user_id=? AND attempt_id=?", JSON.stringify(review), score, earned, max, user.id, uid, aid).run();
+        return json({ok: true, score, pending: Number((await sql(db, "SELECT count(*) AS n FROM quiz_attempts WHERE status='pending'").first()).n)});
+      }
+      if (method === 'GET') return json({attempt: {
+        userId: uid, attemptId: aid, quizId: rec.quiz_id, quizTitle: rec.quiz_title, name: rec.name, email: rec.email, status: rec.status, score: rec.score,
+        earnedPoints: rec.earned_points === null ? null : Number(rec.earned_points), maxPoints: rec.max_points, createdAt: iso(rec.created_at), gradedAt: iso(rec.graded_at), grader: rec.grader, review
+      }});
+    }
+
+    // ---------- Impor / ekspor quiz ----------
+    if (path === '/api/admin/export/quizzes' && method === 'GET') {
+      const rows = await sql(db, "SELECT id,draft,published_at FROM content_items WHERE kind='quiz' ORDER BY sort_order, created_at, id").all();
+      return json({quizzes: rows.results.map(r => ({id: r.id, published: Boolean(r.published_at), ...parseJson(r.draft)}))});
+    }
+    if (path === '/api/admin/import/quizzes' && method === 'POST') {
+      const body = await bodyJSON(request, 4 * 1024 * 1024);
+      if (!Array.isArray(body.quizzes) || !body.quizzes.length) fail(422, 'File tidak berisi quiz.');
+      if (body.quizzes.length > 100) fail(422, 'Maksimal 100 quiz per file.');
+      const errors = [], items = [], plans = [];
+      const courses = new Set((await sql(db, "SELECT id FROM content_items WHERE kind='course'").all()).results.map(r => r.id));
+      for (const qz of body.quizzes) {
+        const where = qz.row ? `Baris ${qz.row}` : `Quiz "${qz.title || qz.id}"`;
+        let existing = null;
+        if (qz.id) {
+          existing = await sql(db, "SELECT id,draft,published_at,revision FROM content_items WHERE kind='quiz' AND id=?", String(qz.id)).first();
+          if (!existing) {errors.push({row: qz.row, message: `${where}: quiz_id "${qz.id}" tidak ditemukan. Kosongkan quiz_id untuk membuat quiz baru.`}); continue;}
+        }
+        const base = existing ? parseJson(existing.draft) : {title: '', category: '', description: '', minutes: 5, color: 'peach', course: '', questions: []};
+        const pick = (v, fallback) => v === undefined || v === null || String(v).trim() === '' ? fallback : v;
+        const draftIn = {...base, title: pick(qz.title, base.title), category: pick(qz.category, base.category), description: pick(qz.description, base.description), minutes: pick(qz.minutes, base.minutes), course: pick(qz.course, base.course)};
+        if (!draftIn.title) {errors.push({row: qz.row, message: `${where}: judul_quiz wajib diisi untuk quiz baru.`}); continue;}
+        if (draftIn.course && !courses.has(String(draftIn.course))) errors.push({row: qz.row, message: `${where}: course_id "${draftIn.course}" tidak ditemukan.`});
+        if (!Array.isArray(qz.questions) || !qz.questions.length) {errors.push({row: qz.row, message: `${where}: quiz "${draftIn.title}" tidak punya pertanyaan.`}); continue;}
+        draftIn.questions = [];
+        for (const q of qz.questions) {
+          const at = `Baris ${q.row ?? '?'}`;
+          const type = String(q.type || 'pg').trim().toLowerCase();
+          if (!['pg', 'pilihan ganda', 'mc', 'essay', 'esai'].includes(type)) {errors.push({row: q.row, message: `${at}: tipe harus PG atau Essay.`}); continue;}
+          const text = String(q.q ?? '').trim();
+          if (!text) {errors.push({row: q.row, message: `${at}: pertanyaan kosong.`}); continue;}
+          const points = pick(q.points, undefined);
+          if (points !== undefined && !(Number.isInteger(Number(points)) && Number(points) >= 1 && Number(points) <= 100)) {errors.push({row: q.row, message: `${at}: poin harus angka bulat 1–100.`}); continue;}
+          if (type === 'essay' || type === 'esai') {draftIn.questions.push({type: 'essay', q: text, points, rubric: String(q.explanation ?? '')}); continue;}
+          const options = (Array.isArray(q.options) ? q.options : []).map(o => String(o ?? '').trim());
+          while (options.length && !options[options.length - 1]) options.pop();
+          if (options.length < 2 || options.some(o => !o)) {errors.push({row: q.row, message: `${at}: isi minimal 2 pilihan berurutan (A, B, …) tanpa yang kosong di tengah.`}); continue;}
+          const letter = String(q.answer ?? '').trim().toUpperCase();
+          const answer = /^[A-F]$/.test(letter) ? letter.charCodeAt(0) - 65 : /^[1-6]$/.test(letter) ? Number(letter) - 1 : -1;
+          if (answer < 0 || answer >= options.length) {errors.push({row: q.row, message: `${at}: jawaban_benar harus huruf A–${String.fromCharCode(64 + options.length)}.`}); continue;}
+          draftIn.questions.push({type: 'mc', q: text, options, answer, why: String(q.explanation ?? ''), points});
+        }
+        let draft;
+        try {draft = normalize('quiz', draftIn, ctx);} catch (e) {errors.push({row: qz.row, message: `${where}: ${e.message}`}); continue;}
+        let warning = '';
+        try {forPublish('quiz', structuredClone(draft));} catch (e) {warning = e.message;}
+        items.push({id: existing?.id || null, title: draft.title, action: existing ? 'update' : 'create', questions: draft.questions.length, essays: draft.questions.filter(q => q.type === 'essay').length, published: Boolean(existing?.published_at), warning});
+        plans.push({existing, draft});
+      }
+      const summary = {create: items.filter(i => i.action === 'create').length, update: items.filter(i => i.action === 'update').length, questions: items.reduce((s, i) => s + i.questions, 0)};
+      if (errors.length || body.dryRun) return json({dryRun: true, ok: !errors.length, errors, items, summary});
+      for (const {existing, draft} of plans) {
+        if (existing) await sql(db, "UPDATE content_items SET draft=?::jsonb, revision=revision+1, updated_at=now(), updated_by=? WHERE kind='quiz' AND id=?", JSON.stringify(draft), user.id, existing.id).run();
+        else {
+          const base = slugify(draft.title); let id = base;
+          for (let n = 2; await sql(db, "SELECT 1 AS x FROM content_items WHERE kind='quiz' AND id=?", id).first(); n++) id = `${base.slice(0, 54)}-${n}`;
+          const order = await sql(db, "SELECT COALESCE(max(sort_order),0)+10 AS n FROM content_items WHERE kind='quiz'").first();
+          await sql(db, "INSERT INTO content_items(kind,id,draft,sort_order,updated_by) VALUES('quiz',?,?::jsonb,?,?)", id, JSON.stringify(draft), Number(order.n), user.id).run();
+        }
+      }
+      return json({dryRun: false, ok: true, errors: [], items, summary});
     }
     fail(404, 'Endpoint admin tidak ditemukan.');
   } catch (error) {

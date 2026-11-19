@@ -193,3 +193,37 @@ a.sc:hover{outline:2px solid #f7c9a6}
 .score-stats .stat-value em{font-style:normal;font-size:15px;color:#98a091}
 .sc-status{display:inline-flex;align-items:center;gap:4px}
 @media (max-width:720px){.score-matrix .sm-user{min-width:150px;max-width:170px}.score-matrix .sm-q{min-width:100px}.score-wrap{max-height:none}}
+/* ---- v3.6: essay, penilaian, impor ---- */
+.nav-badge{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 6px;margin-left:8px;border-radius:999px;background:#e8732a;color:#fff;font-size:10.5px;font-weight:700;line-height:1}
+.q-kind{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#b4561c;background:#fff0e5;border-radius:6px;padding:2px 7px;margin-right:8px;vertical-align:1px}
+.q-kind.q-mc{color:#4c6b5a;background:#eef4ee}
+.ed-row{display:grid;grid-template-columns:1fr 140px;gap:14px}
+.seg-tabs{display:flex;gap:6px;margin:0 0 18px;border-bottom:1px solid #e9ece4}
+.seg-tab{padding:10px 14px;font-size:13px;font-weight:600;color:#6b7568;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px}
+.seg-tab.active{color:#1f2b25;border-color:#e8732a}
+.grade-form{display:grid;gap:14px;padding-bottom:90px}
+.grade-item{background:#fff;border:1px solid #e9ece4;border-radius:14px;padding:18px 20px}
+.grade-mc{padding:14px 20px;background:#fbfcfa}
+.grade-q{display:flex;gap:12px;align-items:flex-start}
+.grade-q p{margin:6px 0 0;font-size:14px;line-height:1.7;color:#1f2b25}
+.grade-rubric{margin:12px 0;background:#f6f8f3;border:1px solid #e3e8dc;border-radius:10px;padding:10px 14px;font-size:13px;line-height:1.7}
+.grade-rubric summary{cursor:pointer;font-weight:600;font-size:12px;color:#4c6b5a}
+.grade-rubric div{margin-top:8px}
+.grade-hint{font-size:12px;color:#98a091;margin:10px 0}
+.grade-answer{background:#fffaf4;border:1px solid #f3e1cf;border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.8;margin:6px 0 14px;word-break:break-word}
+.grade-inputs{display:grid;grid-template-columns:170px 1fr;gap:14px;align-items:start}
+.grade-inputs label{display:grid;gap:6px;font-size:12px;font-weight:600;color:#4b564e}
+.grade-num{display:flex;align-items:center;gap:8px;font-weight:600}
+.grade-num input{width:86px}
+.grade-inputs textarea,.grade-num input{border:1px solid #dfe4d8;border-radius:9px;padding:9px 11px;font:inherit;font-size:13px;font-weight:400}
+.grade-mc-line{font-size:12.5px;margin:8px 0 0 40px;color:#5c675f}
+.grade-mc-line.ok{color:#3c7a4f}.grade-mc-line.bad{color:#b0412b}
+.grade-bar{position:sticky;bottom:0;display:flex;justify-content:space-between;align-items:center;gap:14px;background:rgba(255,255,255,.96);backdrop-filter:blur(6px);border:1px solid #e9ece4;border-radius:14px;padding:12px 18px;box-shadow:0 -6px 24px rgba(31,43,37,.06)}
+.grade-bar small{display:block;color:#b0412b;font-size:11.5px}
+.sc-wait{background:#fff6ec;color:#b4561c;text-decoration:none}
+.import-file{font-size:12px;color:#7a8478;margin:0 0 10px}
+.import-ok{background:#eef6ef;border:1px solid #d3e7d6;color:#2f6b40;border-radius:10px;padding:10px 14px;font-size:13px}
+.import-errors{background:#fdf1ee;border:1px solid #f2d2c9;color:#8e3423;border-radius:10px;padding:12px 16px;font-size:12.5px;line-height:1.7;margin-bottom:14px;max-height:260px;overflow:auto}
+.import-errors ul{margin:6px 0 0;padding-left:18px}
+.admin-head-actions{flex-wrap:wrap}
+@media (max-width:720px){.ed-row,.grade-inputs{grid-template-columns:1fr}.grade-bar{flex-direction:column;align-items:stretch}}

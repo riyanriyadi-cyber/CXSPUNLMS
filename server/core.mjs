@@ -14,7 +14,7 @@ export {loadCatalog};
 export function safeCatalog(catalog) {
   return escapeDeep({
     courses: catalog.courses.map(({version, ...c}) => c),
-    quizzes: catalog.quizzes.map(({version, ...q}) => ({...q, questions: q.questions.map(({q, options}) => ({q, options}))})),
+    quizzes: catalog.quizzes.map(({version, ...q}) => ({...q, questions: q.questions.map(({q, options, type, points}) => ({q, type: type || 'mc', options: type === 'essay' ? [] : options, points: points || 1}))})),
     articles: catalog.articles.map(({version, ...a}) => ({...a, publishedAt: version}))
   });
 }
@@ -27,7 +27,7 @@ export async function learningState(db, userId, catalog) {
     sql(db, 'SELECT course_id FROM enrollments WHERE user_id=? ORDER BY created_at', userId).all(),
     sql(db, 'SELECT kind,content_id FROM bookmarks WHERE user_id=? ORDER BY created_at', userId).all(),
     sql(db, 'SELECT article_id FROM article_reads WHERE user_id=?', userId).all(),
-    sql(db, 'SELECT quiz_id,score,created_at FROM quiz_attempts WHERE user_id=? ORDER BY created_at,attempt_id', userId).all()
+    sql(db, 'SELECT quiz_id,score,status,created_at FROM quiz_attempts WHERE user_id=? ORDER BY created_at,attempt_id', userId).all()
   ]);
   const has = (list, id) => list.some(x => x.id === id);
   const progress = Object.fromEntries(catalog.courses.map(c => [c.id, []]));
@@ -41,7 +41,9 @@ export async function learningState(db, userId, catalog) {
     activity.push({date: dateFormat.format(new Date(row.completed_at)), minutes: c.lessons[index].duration});
   }
   const results = {};
+  const pending = {};
   for (const row of a.results) {
+    if (row.status === 'pending') {if (has(catalog.quizzes, row.quiz_id)) pending[row.quiz_id] = (pending[row.quiz_id] || 0) + 1; continue;}
     if (!has(catalog.quizzes, row.quiz_id)) continue;
     const prev = results[row.quiz_id];
     results[row.quiz_id] = {score: Math.max(prev?.score || 0, row.score), lastScore: row.score, attempts: (prev?.attempts || 0) + 1, date: iso(row.created_at)};
@@ -52,13 +54,21 @@ export async function learningState(db, userId, catalog) {
     savedCourses: b.results.filter(x => x.kind === 'course' && has(catalog.courses, x.content_id)).map(x => x.content_id),
     savedArticles: b.results.filter(x => x.kind === 'article' && has(catalog.articles, x.content_id)).map(x => x.content_id),
     readArticles: r.results.map(x => x.article_id).filter(id => has(catalog.articles, id)),
-    results, activity
+    results, pending, activity
   };
 }
 
-function attemptResult(record) {
-  const review = parseJson(record.review);
-  return escapeDeep({id: record.attempt_id, score: record.score, correct: review.filter(r => r.correct).length, total: review.length, passed: record.score >= 80, answers: parseJson(record.answers), review, quizId: record.quiz_id, createdAt: iso(record.created_at)});
+// Untuk peserta: rubrik essay baru ditampilkan (sebagai pembahasan) setelah dinilai.
+export function attemptResult(record) {
+  const pending = record.status === 'pending';
+  const review = parseJson(record.review).map(r => r.type === 'essay' ? (({rubric, ...rest}) => pending ? rest : {...rest, why: rubric || ''})(r) : r);
+  return escapeDeep({
+    id: record.attempt_id, status: record.status || 'graded', score: record.score, passed: !pending && record.score >= 80,
+    correct: review.filter(r => r.type !== 'essay' && r.correct).length, total: review.length,
+    mcTotal: review.filter(r => r.type !== 'essay').length, essays: review.filter(r => r.type === 'essay').length,
+    earnedPoints: record.earned_points === null || record.earned_points === undefined ? null : Number(record.earned_points), maxPoints: record.max_points ?? null,
+    answers: parseJson(record.answers), review, quizId: record.quiz_id, createdAt: iso(record.created_at), gradedAt: record.graded_at ? iso(record.graded_at) : null
+  });
 }
 
 export async function api(request, {db, user, origin}) {
@@ -93,12 +103,23 @@ export async function api(request, {db, user, origin}) {
       find(catalog.articles, m[1], 'Artikel tidak ditemukan.'); await bodyJSON(request);
       await sql(db, 'INSERT INTO article_reads(user_id,article_id,read_at) VALUES(?,?,?) ON CONFLICT DO NOTHING', user.id, m[1], now).run();
     } else if (method === 'POST' && (m = path.match(/^\/api\/quizzes\/([a-z0-9-]+)\/attempts$/))) {
-      const q = find(catalog.quizzes, m[1], 'Quiz tidak ditemukan.'), data = await bodyJSON(request);
+      const q = find(catalog.quizzes, m[1], 'Quiz tidak ditemukan.'), data = await bodyJSON(request, 256 * 1024);
       if (typeof data.attemptId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.attemptId)) fail(422, 'ID percobaan tidak valid.');
-      if (!Array.isArray(data.answers) || data.answers.length !== q.questions.length || data.answers.some((v, i) => !Number.isInteger(v) || v < 0 || v >= q.questions[i].options.length)) fail(422, 'Jawab semua pertanyaan dengan pilihan yang valid. Jika quiz baru diperbarui, muat ulang halaman.');
-      const review = q.questions.map((question, i) => ({q: question.q, options: question.options, selected: data.answers[i], answer: question.answer, correct: data.answers[i] === question.answer, why: question.why}));
-      const score = Math.round(review.filter(x => x.correct).length / review.length * 100);
-      await sql(db, 'INSERT INTO quiz_attempts(user_id,attempt_id,quiz_id,score,answers,review,content_version,created_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING', user.id, data.attemptId, q.id, score, JSON.stringify(data.answers), JSON.stringify(review), q.version, now).run();
+      const validAnswer = (v, question) => question.type === 'essay'
+        ? typeof v === 'string' && v.trim().length > 0 && v.length <= 5000
+        : Number.isInteger(v) && v >= 0 && v < question.options.length;
+      if (!Array.isArray(data.answers) || data.answers.length !== q.questions.length || data.answers.some((v, i) => !validAnswer(v, q.questions[i]))) fail(422, 'Jawab semua pertanyaan (essay maksimal 5.000 karakter). Jika quiz baru diperbarui, muat ulang halaman.');
+      const review = q.questions.map((question, i) => {
+        const points = question.points || 1;
+        if (question.type === 'essay') return {type: 'essay', q: question.q, points, answerText: data.answers[i].trim(), earned: null, feedback: '', rubric: question.rubric || ''};
+        const correct = data.answers[i] === question.answer;
+        return {type: 'mc', q: question.q, options: question.options, selected: data.answers[i], answer: question.answer, correct, why: question.why, points, earned: correct ? points : 0};
+      });
+      const maxPoints = review.reduce((s, r) => s + r.points, 0), mcEarned = review.reduce((s, r) => s + (r.earned || 0), 0);
+      const hasEssay = review.some(r => r.type === 'essay');
+      const score = hasEssay ? null : Math.round(mcEarned / maxPoints * 100);
+      await sql(db, 'INSERT INTO quiz_attempts(user_id,attempt_id,quiz_id,score,status,max_points,earned_points,answers,review,content_version,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING',
+        user.id, data.attemptId, q.id, score, hasEssay ? 'pending' : 'graded', maxPoints, mcEarned, JSON.stringify(data.answers), JSON.stringify(review), q.version, now).run();
       const record = await sql(db, 'SELECT * FROM quiz_attempts WHERE user_id=? AND attempt_id=?', user.id, data.attemptId).first();
       if (record.quiz_id !== q.id || record.answers !== JSON.stringify(data.answers)) fail(409, 'ID percobaan telah digunakan untuk jawaban yang berbeda.');
       return json({result: attemptResult(record), state: await learningState(db, user.id, catalog)});

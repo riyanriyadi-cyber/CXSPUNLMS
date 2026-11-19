@@ -5,6 +5,7 @@ import {TextStyle, FontFamily, FontSize, Color, BackgroundColor} from '@tiptap/e
 import TextAlign from '@tiptap/extension-text-align';
 import {TableKit} from '@tiptap/extension-table';
 import Image from '@tiptap/extension-image';
+import Youtube from '@tiptap/extension-youtube';
 
 const FONTS = [['', 'Font standar'], ['Manrope, sans-serif', 'Manrope'], ['Georgia, serif', 'Georgia (serif)'], ['"Courier New", monospace', 'Courier New']];
 const SIZES = [['', 'Normal'], ['13px', 'Kecil'], ['18px', 'Besar'], ['22px', 'Sangat besar']];
@@ -54,6 +55,7 @@ const I = {
   quote: '<path d="M6 17c-1.5 0-3-1.2-3-3.5C3 10 5 7 8 6M15 17c-1.5 0-3-1.2-3-3.5C12 10 14 7 17 6"/>', hr: '<path d="M3 12h18"/>',
   table: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/>',
   image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
+  video: '<rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="m10 9.5 4.5 2.5-4.5 2.5z"/>',
   clear: '<path d="M4 7V5h12v2M10 5l-3 14M5 19h6"/><path d="m15 14 6 6M21 14l-6 6"/>'
 };
 const svg = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
@@ -68,7 +70,7 @@ function toolbarHtml() {
     ${sel('color', 'Warna teks', COLORS)}${sel('mark', 'Highlight', MARKS)}<span class="rte-sep"></span>
     ${btn('ul', 'Bullet list', svg('ul'))}${btn('ol', 'Daftar bernomor', svg('ol'))}${btn('outdent', 'Kurangi indent (Shift+Tab di list)', svg('outdent'))}${btn('indent', 'Tambah indent (Tab di list)', svg('indent'))}<span class="rte-sep"></span>
     ${btn('left', 'Rata kiri', svg('left'))}${btn('center', 'Rata tengah', svg('center'))}${btn('right', 'Rata kanan', svg('right'))}${btn('justify', 'Rata kiri-kanan', svg('justify'))}<span class="rte-sep"></span>
-    ${btn('link', 'Sisipkan link', svg('link'))}${btn('quote', 'Kutipan', svg('quote'))}${btn('hr', 'Garis pemisah', svg('hr'))}${btn('table', 'Sisipkan tabel', svg('table'))}${btn('image', 'Sisipkan gambar (atau paste / drag gambar ke sini)', svg('image'))}${btn('clear', 'Hapus format', svg('clear'))}
+    ${btn('link', 'Sisipkan link', svg('link'))}${btn('quote', 'Kutipan', svg('quote'))}${btn('hr', 'Garis pemisah', svg('hr'))}${btn('table', 'Sisipkan tabel', svg('table'))}${btn('image', 'Sisipkan gambar (atau paste / drag gambar ke sini)', svg('image'))}${btn('video', 'Sisipkan video YouTube di posisi kursor', svg('video'))}${btn('clear', 'Hapus format', svg('clear'))}
   </div>
   <div class="rte-row rte-context" data-ctx="table" hidden><span class="rte-ctx-label">Tabel:</span>
     ${btn('row-add', 'Tambah baris', '+ Baris')}${btn('col-add', 'Tambah kolom', '+ Kolom')}${btn('row-del', 'Hapus baris', '− Baris')}${btn('col-del', 'Hapus kolom', '− Kolom')}${btn('header', 'Baris judul tabel', 'Baris judul')}${btn('table-del', 'Hapus tabel', 'Hapus tabel', 'data-danger')}
@@ -119,6 +121,7 @@ export function create(host, o) {
       TextAlign.configure({types: ['paragraph']}),
       TableKit.configure({table: {resizable: false}}),
       SizedImage.configure({inline: false, allowBase64: false}),
+      Youtube.configure({nocookie: true, controls: true, rel: 0, width: 640, height: 360, HTMLAttributes: {referrerpolicy: 'strict-origin-when-cross-origin'}}),
       Indent
     ],
     content: o.html || '<p></p>',
@@ -210,6 +213,12 @@ export function create(host, o) {
       case 'image': {
         const input = document.createElement('input'); input.type = 'file'; input.accept = IMAGE_TYPES.join(','); input.multiple = true;
         input.onchange = () => insertImages([...input.files]); input.click(); break;
+      }
+      case 'video': {
+        const url = await o.ask('Link video YouTube (mis. https://www.youtube.com/watch?v=…)', 'https://');
+        if (url === null || !url.trim() || url.trim() === 'https://') break;
+        if (!editor.chain().focus().setYoutubeVideo({src: url.trim()}).run()) o.notify('Link YouTube tidak dikenali. Salin link dari tombol Bagikan di YouTube.', true);
+        break;
       }
       case 'img-s': case 'img-m': case 'img-l': c.updateAttributes('image', {size: b.dataset.cmd.slice(4)}).run(); break;
       case 'img-alt': {

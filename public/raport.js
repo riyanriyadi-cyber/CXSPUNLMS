@@ -57,7 +57,7 @@
   function html(d, {logo = 'assets/spun-logo.png'} = {}) {
     const s = d.summary;
     const tile = (label, value, note) => `<div class="rp-tile"><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`;
-    const status = q => q.passed ? '<span class="rp-status pass"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>Lulus</span>' : '<span class="rp-status pending"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4v4.5l3 1.5"/><circle cx="8" cy="8" r="6"/></svg>Belum lulus</span>';
+    const status = q => q.best === null ? '<span class="rp-status pending"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4v4.5l3 1.5"/><circle cx="8" cy="8" r="6"/></svg>Menunggu penilaian</span>' : q.passed ? '<span class="rp-status pass"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>Lulus</span>' : '<span class="rp-status pending"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4v4.5l3 1.5"/><circle cx="8" cy="8" r="6"/></svg>Belum lulus</span>';
     return `<article class="raport">
       <header class="raport-head"><img src="${esc(logo)}" alt="SPUN" class="rp-logo"/><div class="rp-title"><span class="rp-kicker">Raport Pembelajaran</span><h1>${esc(d.user.name)}</h1><p>${esc(d.user.email)}${d.user.role === 'admin' ? ' · Admin' : ''}</p></div>
         <dl class="rp-meta"><div><dt>Periode</dt><dd>${esc(periodLabel(d.period))}</dd></div><div><dt>Bergabung</dt><dd>${fmtDay(d.user.joinedAt)}</dd></div><div><dt>Terakhir aktif</dt><dd>${fmtDay(d.user.lastActivity)}</dd></div><div><dt>Dibuat</dt><dd>${fmtDay(d.generatedAt)}</dd></div></dl></header>
@@ -65,7 +65,7 @@
         ${tile('Course selesai', `${s.coursesCompleted}<em>/${s.coursesFollowed}</em>`, `dari course yang diikuti · ${s.coursesAvailable} tersedia`)}
         ${tile('Modul selesai', s.lessonsCompleted, 'pada periode ini')}
         ${tile('Waktu belajar', esc(fmtMinutes(s.minutes)), 'estimasi dari durasi modul')}
-        ${tile('Quiz lulus', `${s.quizzesPassed}<em>/${s.quizzesAttempted}</em>`, 'dari quiz yang dikerjakan')}
+        ${tile('Quiz lulus', `${s.quizzesPassed}<em>/${s.quizzesAttempted}</em>`, s.quizzesPending ? `dari quiz yang dikerjakan · ${s.quizzesPending} menunggu penilaian` : 'dari quiz yang dikerjakan')}
         ${tile('Rata-rata skor terbaik', s.avgBest ?? '—', 'skor 0–100 per quiz')}
         ${tile('Artikel dibaca', s.articlesRead, 'pada periode ini')}
       </section>
@@ -73,7 +73,7 @@
       <section class="rp-section"><h2>Course</h2>${d.courses.length ? `<div class="rp-table-wrap"><table class="rp-data"><thead><tr><th>Course</th><th>Progres</th><th>Modul</th><th>Mulai</th><th>Selesai</th><th>Modul di periode ini</th></tr></thead><tbody>
         ${d.courses.map(c => `<tr><td><strong>${esc(c.title)}</strong><small>${esc(c.category)}</small></td><td><div class="rp-progress"><span class="rp-track"><span style="width:${c.percent}%"></span></span><b>${c.percent}%</b></div></td><td>${c.done}/${c.total}</td><td>${fmtDay(c.startedAt)}</td><td>${c.completedAt ? fmtDay(c.completedAt) : '—'}</td><td>${c.lessonsInPeriod}</td></tr>`).join('')}</tbody></table></div>` : '<div class="raport-empty">Belum mengikuti course pada periode ini.</div>'}</section>
       <section class="rp-section"><h2>Quiz</h2>${d.quizzes.length ? `<div class="rp-table-wrap"><table class="rp-data"><thead><tr><th>Quiz</th><th>Skor terbaik</th><th>Skor terakhir</th><th>Percobaan</th><th>Status</th><th>Terakhir dikerjakan</th></tr></thead><tbody>
-        ${d.quizzes.map(q => `<tr><td><strong>${esc(q.title)}</strong><small>${esc(q.category)}</small></td><td><b>${q.best}</b></td><td>${q.last}</td><td>${q.attempts}</td><td>${status(q)}</td><td>${fmtDay(q.lastAt)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="raport-empty">Belum ada quiz yang dikerjakan pada periode ini.</div>'}</section>
+        ${d.quizzes.map(q => `<tr><td><strong>${esc(q.title)}</strong><small>${esc(q.category)}</small></td><td><b>${q.best ?? '—'}</b></td><td>${q.last ?? '—'}</td><td>${q.attempts}${q.pending ? `<small>${q.pending} menunggu penilaian</small>` : ''}</td><td>${status(q)}</td><td>${fmtDay(q.lastAt)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="raport-empty">Belum ada quiz yang dikerjakan pada periode ini.</div>'}</section>
       <section class="rp-section"><h2>Artikel dibaca</h2>${d.articles.length ? `<ul class="rp-articles">${d.articles.map(a => `<li><span>${esc(a.title)}</span><small>${esc(a.category)} · ${fmtDay(a.readAt)}</small></li>`).join('')}</ul>` : '<div class="raport-empty">Belum ada artikel yang ditandai dibaca pada periode ini.</div>'}</section>
       <footer class="rp-foot">Status lulus: skor terbaik ≥ 80. Angka modul, quiz, waktu belajar, dan artikel dihitung dalam periode yang dipilih; progres course dihitung kumulatif sampai akhir periode. Waktu belajar adalah estimasi dari durasi modul, bukan waktu layar.</footer>
     </article>`;

@@ -43,9 +43,9 @@ const response = await fetch('/api/quizzes/cx-quiz/attempts', {
 const data = await response.json();
 ```
 
-Jawaban adalah indeks opsi mulai 0. Pertahankan attemptId saat mengulang request akibat gangguan jaringan. ID dan jawaban sama tidak menambah percobaan; ID sama dengan jawaban/quiz berbeda menghasilkan 409. Percobaan baru memakai UUID baru. Nilai dari klien diabaikan; server menghitungnya sendiri.
+Jawaban adalah indeks opsi mulai 0; untuk soal essay berupa teks 1–5.000 karakter (contoh `[0, 2, "jawaban essay…"]`). Body quiz maksimal 256 KiB. Pertahankan attemptId saat mengulang request akibat gangguan jaringan. ID dan jawaban sama tidak menambah percobaan; ID sama dengan jawaban/quiz berbeda menghasilkan 409. Percobaan baru memakai UUID baru. Nilai dari klien diabaikan; server menghitungnya sendiri.
 
-Respons quiz: `{result,state}`. result berisi score, correct, total, passed, answers, review. Endpoint mutasi lainnya mengembalikan `{state}`. Skor terbaik berasal dari seluruh percobaan pengguna. Batas lulus latihan 80. Semua query data pembelajaran dibatasi ke identitas pengguna aktif; user ID dari body tidak digunakan.
+Respons quiz: `{result,state}`. Jika ada essay, `result.status = "pending"`, `score = null`, `earnedPoints` = poin pilihan ganda, dan rubrik belum dikirim; setelah dinilai `status = "graded"`, setiap item essay berisi `earned`, `feedback`, dan `why` (rubrik). Field lain: `maxPoints`, `mcTotal`, `essays`, `gradedAt`. `state.pending[quizId]` = jumlah percobaan yang menunggu penilaian. result berisi score, correct, total, passed, answers, review. Endpoint mutasi lainnya mengembalikan `{state}`. Skor terbaik berasal dari seluruh percobaan pengguna. Batas lulus latihan 80. Semua query data pembelajaran dibatasi ke identitas pengguna aktif; user ID dari body tidak digunakan.
 
 | Status | Arti |
 | --- | --- |
@@ -82,7 +82,15 @@ Semua endpoint `/api/admin/*` butuh akun dengan `role = 'admin'` (dicek di datab
 | POST | /api/admin/users/:id/status | `{status: "active" | "disabled"}` (juga ban/unban di Supabase Auth) |
 | POST | /api/admin/users/:id/resend | Kirim ulang undangan (hanya untuk yang belum pernah masuk) |
 | GET | /api/admin/report | Statistik per course & quiz + daftar peserta |
-| GET | /api/admin/scores?from&to | Matriks nilai: `quizzes`, `users`, `cells[userId][quizId] = {best, last, attempts, lastAt}` (hanya quiz tayang; percobaan dalam periode) |
+| GET | /api/admin/scores?from&to | Matriks nilai: `quizzes`, `users`, `cells[userId][quizId] = {best, last, attempts, pending, lastAt}` (hanya quiz tayang; percobaan dalam periode; `best` null jika semua percobaan masih menunggu penilaian) |
+| GET | /api/admin/grading/count | `{pending}` jumlah percobaan essay yang belum dinilai |
+| GET | /api/admin/grading?status=pending\|graded | Antrean penilaian (maks. 200) |
+| GET | /api/admin/grading/:userId/:attemptId | Detail percobaan termasuk jawaban & rubrik |
+| POST | /api/admin/grading/:userId/:attemptId | `{grades: [{index, earned, feedback}]}` nilai 0–poin (kelipatan 0,5) untuk setiap essay; bisa diulang untuk mengubah nilai → `{score, pending}` |
+| GET | /api/admin/export/quizzes | Semua quiz (draft) untuk ekspor |
+| POST | /api/admin/import/quizzes | `{dryRun, quizzes: [{row, id?, title, category, description, minutes, course, questions: [{row, type: "PG"\|"Essay", q, options[], answer: "A"–"F", explanation, points}]}]}` → `{ok, errors[{row,message}], items, summary}`; tanpa error & `dryRun:false` → disimpan sebagai draft (quiz yang ada: seluruh pertanyaan diganti). Maks. 100 quiz, body 4 MiB |
+
+Format soal quiz: pilihan ganda `{type:"mc", q, options[2–6], answer, why, points=1}`, essay `{type:"essay", q, points=5, rubric}`.
 
 Format bagian (section) modul/artikel: `{heading, html, image?: {url, alt, caption}, video?: {youtubeId, title}}`. `html` disaring server (tag: p, br, strong, em, u, s, span, a, ul, ol, li, blockquote, hr, table, img; style: text-align, font-family terbatas, font-size 13/18/22px, color, background-color). Format lama `body` (teks biasa) tetap diterima dan dikonversi otomatis. Saat menyimpan, `video` boleh dikirim sebagai `{url: "<link YouTube>"}`. URL gambar harus dari bucket `lms-media` proyek ini.
 

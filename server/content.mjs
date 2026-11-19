@@ -103,10 +103,14 @@ export function normalize(kind, d, ctx) {
   if (kind === 'quiz') {
     const questions = arr(d.questions, 60, 'Pertanyaan').map((q, i) => {
       if (!q || typeof q !== 'object') bad(`Pertanyaan ${i + 1} tidak valid.`);
+      if (q.type === 'essay') return {
+        type: 'essay', q: str(q.q, 2000, `Pertanyaan ${i + 1}`), points: int(q.points, 1, 100, `Pertanyaan ${i + 1}: poin`, 5),
+        rubric: str(q.rubric ?? q.why, 4000, `Pertanyaan ${i + 1}: rubrik`)
+      };
       const options = arr(q.options, 6, `Pertanyaan ${i + 1}: pilihan`).map((o, j) => str(o, 400, `Pertanyaan ${i + 1}: pilihan ${String.fromCharCode(65 + j)}`));
       const answer = q.answer === null || q.answer === undefined || q.answer === '' ? null : Number(q.answer);
       if (answer !== null && (!Number.isInteger(answer) || answer < 0 || answer >= Math.max(options.length, 1))) bad(`Pertanyaan ${i + 1}: jawaban benar tidak valid.`);
-      return {q: str(q.q, 600, `Pertanyaan ${i + 1}`), options, answer, why: str(q.why, 2000, `Pertanyaan ${i + 1}: pembahasan`)};
+      return {type: 'mc', q: str(q.q, 600, `Pertanyaan ${i + 1}`), options, answer, why: str(q.why, 2000, `Pertanyaan ${i + 1}: pembahasan`), points: int(q.points, 1, 100, `Pertanyaan ${i + 1}: poin`, 1)};
     });
     const course = typeof d.course === 'string' && ID_RE.test(d.course) ? d.course : '';
     return {...base, minutes: int(d.minutes, 1, 300, 'Estimasi menit', 5), course, questions};
@@ -141,6 +145,7 @@ export function forPublish(kind, d) {
     need(d.questions.length, 'Quiz butuh minimal 1 pertanyaan sebelum publish.');
     d.questions.forEach((q, i) => {
       need(q.q, `Pertanyaan ${i + 1}: teks pertanyaan wajib diisi.`);
+      if (q.type === 'essay') return;
       need(q.options.length >= 2 && q.options.every(Boolean), `Pertanyaan ${i + 1}: isi minimal 2 pilihan dan jangan biarkan pilihan kosong.`);
       need(q.answer !== null && q.answer < q.options.length, `Pertanyaan ${i + 1}: pilih jawaban yang benar.`);
     });

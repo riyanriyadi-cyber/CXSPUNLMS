@@ -25,7 +25,8 @@
   const LEVELS = [['Fundamental', 'Fundamental'], ['Intermediate', 'Intermediate'], ['Advanced', 'Advanced']];
   const STATUS = {draft: ['Draft', 'st-draft'], published: ['Tayang', 'st-live'], changed: ['Tayang · ada perubahan', 'st-changed']};
   const USTATUS = {active: ['Aktif', 'st-live'], invited: ['Menunggu aktivasi', 'st-changed'], disabled: ['Nonaktif', 'st-off']};
-  const NAV = [['content/course', 'Course'], ['content/quiz', 'Quiz'], ['content/article', 'Artikel'], ['users', 'Peserta'], ['scores', 'Nilai Quiz'], ['report', 'Laporan']];
+  const NAV = [['content/course', 'Course'], ['content/quiz', 'Quiz'], ['content/article', 'Artikel'], ['users', 'Peserta'], ['scores', 'Nilai Quiz'], ['grading', 'Penilaian'], ['report', 'Laporan']];
+  let pendingCount = 0;
 
   let items = [];          // ringkasan konten
   let editor = null;       // {kind,id,draft,revision,status,dirty,error,publishedAt}
@@ -103,9 +104,12 @@
 
   // ---------- routing ----------
   function nav(active) {
-    $('#admin-nav').innerHTML = NAV.map(([h, label]) => `<a class="nav-item ${active === h ? 'active' : ''}" href="#${h}">${label}</a>`).join('');
+    $('#admin-nav').innerHTML = NAV.map(([h, label]) => `<a class="nav-item ${active === h ? 'active' : ''}" href="#${h}">${label}${h === 'grading' && pendingCount ? `<span class="nav-badge" aria-label="${pendingCount} menunggu penilaian">${pendingCount}</span>` : ''}</a>`).join('');
+    navActive = active;
     $('#breadcrumb').textContent = 'Admin · ' + (NAV.find(n => n[0] === active)?.[1] || 'Editor');
   }
+  let navActive = '';
+  async function refreshPending() {try {const {pending} = await api.get('/api/admin/grading/count'); if (pending !== pendingCount) {pendingCount = pending; const t = $('#breadcrumb').textContent; nav(navActive); $('#breadcrumb').textContent = t;}} catch {}}
   async function route() {
     const [page, a, b] = location.hash.slice(1).split('/');
     destroyRtes();
@@ -115,10 +119,12 @@
       else if (page === 'users') {editor = null; nav('users'); await renderUsers();}
       else if (page === 'raport' && a) {editor = null; nav('users'); await renderAdminRaport(a);}
       else if (page === 'scores') {editor = null; nav('scores'); await (a ? renderQuizScores(decodeURIComponent(a)) : renderScores());}
+      else if (page === 'grading') {editor = null; nav('grading'); await (a && b ? renderGradeForm(a, b) : renderGrading(a === 'graded' ? 'graded' : 'pending'));}
       else if (page === 'report') {editor = null; nav('report'); await renderReport();}
       else {editor = null; const k = KIND[a] ? a : 'course'; nav('content/' + k); await renderList(k);}
     } catch (e) {main.innerHTML = `<div class="admin-denied"><h1>Belum dapat memuat.</h1><p>${esc(e.message)}</p><button class="btn btn-orange" data-act="reload">Coba lagi</button></div>`;}
     lastHash = location.hash; main.focus({preventScroll: true});
+    refreshPending();
   }
   window.addEventListener('hashchange', async () => {
     if (editor?.dirty && location.hash !== lastHash) {
@@ -135,7 +141,7 @@
     items = (await api.get('/api/admin/content')).items;
     const list = items.filter(i => i.kind === kind), K = KIND[kind];
     const tabs = Object.entries(KIND).map(([k, v]) => `<a class="tab ${k === kind ? 'active' : ''}" href="#content/${k}">${v.label}<span>${items.filter(i => i.kind === k).length}</span></a>`).join('');
-    main.innerHTML = `<div class="content-fade">${heading('Kelola materi', `${K.label}`, 'Perubahan disimpan sebagai draft. Peserta hanya melihat versi yang sudah di-publish.', `<button class="btn btn-orange" data-act="new" data-kind="${kind}">+ ${K.label} baru</button>`)}
+    main.innerHTML = `<div class="content-fade">${heading('Kelola materi', `${K.label}`, 'Perubahan disimpan sebagai draft. Peserta hanya melihat versi yang sudah di-publish.', `${kind === 'quiz' ? '<button class="btn btn-outline" data-act="quiz-template">Unduh template</button><button class="btn btn-outline" data-act="quiz-export">Ekspor semua quiz</button><button class="btn btn-outline" data-act="quiz-import">Impor Excel/CSV</button>' : ''}<button class="btn btn-orange" data-act="new" data-kind="${kind}">+ ${K.label} baru</button>`)}
       <div class="catalog-toolbar"><div class="tabs">${tabs}</div></div>
       ${list.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr><th class="col-order">Urutan</th><th>Judul</th><th>Isi</th><th>Status</th><th>Terakhir diubah</th><th class="col-actions">Aksi</th></tr></thead><tbody>
       ${list.map((it, i) => `<tr>
@@ -182,7 +188,7 @@
   const val = p => getPath(editor.draft, p);
   const fInput = (label, p, o = {}) => `<label class="${o.cls || ''}">${label}<input data-f="${p}" ${o.num ? 'data-num type="number" min="1" max="600"' : 'type="text"'} value="${esc(val(p) ?? '')}" ${o.max ? `maxlength="${o.max}"` : ''} ${o.list ? `list="${o.list}"` : ''} placeholder="${esc(o.ph || '')}" />${o.hint ? `<small>${o.hint}</small>` : ''}</label>`;
   const fText = (label, p, o = {}) => `<label class="${o.cls || ''}">${label}<textarea data-f="${p}" rows="${o.rows || 3}" ${o.max ? `maxlength="${o.max}"` : ''} placeholder="${esc(o.ph || '')}">${esc(val(p) ?? '')}</textarea>${o.hint ? `<small>${o.hint}</small>` : ''}</label>`;
-  const fSelect = (label, p, opts, o = {}) => `<label class="${o.cls || ''}">${label}<select data-f="${p}">${opts.map(([v, l]) => `<option value="${esc(v)}" ${String(val(p) ?? '') === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
+  const fSelect = (label, p, opts, o = {}) => `<label class="${o.cls || ''}">${label}<select data-f="${p}" ${o.rerender ? 'data-rerender' : ''}>${opts.map(([v, l]) => `<option value="${esc(v)}" ${String(val(p) ?? '') === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
   const tools = (arr, i, n, what) => `<span class="ed-tools"><button type="button" class="mini" data-act="move" data-arr="${arr}" data-i="${i}" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="Naikkan ${what}">↑</button><button type="button" class="mini" data-act="move" data-arr="${arr}" data-i="${i}" data-dir="1" ${i === n - 1 ? 'disabled' : ''} aria-label="Turunkan ${what}">↓</button><button type="button" class="mini mini-danger" data-act="remove" data-arr="${arr}" data-i="${i}" aria-label="Hapus ${what}">✕</button></span>`;
   const catList = () => `<datalist id="cat-list">${[...new Set(items.map(i => i.category).filter(Boolean))].map(c => `<option value="${esc(c)}">`).join('')}</datalist>`;
 
@@ -193,11 +199,12 @@
       const vid = ytId(video);
       return `<div class="ed-section"><div class="ed-section-head"><strong>Bagian ${j + 1}</strong>${tools(base, j, list.length, 'bagian')}</div>
         ${fInput('Subjudul', `${p}.heading`, {max: 160, ph: 'Opsional'})}
-        <div class="ed-rte"><span class="ed-label">Isi</span><div class="rte-host" data-rte="${p}"></div><small class="ed-hint">Paste (Ctrl/Cmd+V) atau drag gambar langsung ke kolom isi. Tab / Shift+Tab mengatur indent di dalam list.</small></div>
         <div class="ed-media">
+          <div class="ed-media-col"><label>Video YouTube<input data-f="${p}.video" data-video type="url" value="${esc(video)}" placeholder="https://www.youtube.com/watch?v=…" /><small class="${vid === null ? 'hint-bad' : vid ? 'hint-ok' : ''}" data-video-hint>${vid === null ? 'Link YouTube tidak dikenali.' : vid ? 'Video terdeteksi ✓' : 'Opsional. Tampil di atas gambar & isi. Untuk video di tengah teks, pakai tombol ▶ di toolbar Isi.'}</small></label></div>
           <div class="ed-media-col"><span class="ed-label">Gambar utama bagian (opsional)</span>${s.image?.url ? `<div class="ed-image"><img src="${esc(s.image.url)}" alt="" /><div>${fInput('Teks alternatif (deskripsi gambar)', `${p}.image.alt`, {max: 200})}${fInput('Keterangan (opsional)', `${p}.image.caption`, {max: 200})}<button type="button" class="btn btn-outline btn-danger-text" data-act="remove-image" data-path="${p}">Hapus gambar</button></div></div>` : `<button type="button" class="btn btn-outline" data-act="upload-image" data-path="${p}">Unggah gambar</button><small>PNG, JPG, WEBP, atau GIF · maks. 5 MB</small>`}</div>
-          <div class="ed-media-col"><label>Video YouTube<input data-f="${p}.video" data-video type="url" value="${esc(video)}" placeholder="https://www.youtube.com/watch?v=…" /><small class="${vid === null ? 'hint-bad' : vid ? 'hint-ok' : ''}" data-video-hint>${vid === null ? 'Link YouTube tidak dikenali.' : vid ? 'Video terdeteksi ✓' : 'Opsional. Tempel link video YouTube.'}</small></label></div>
-        </div></div>`;
+        </div>
+        <div class="ed-rte"><span class="ed-label">Isi</span><div class="rte-host" data-rte="${p}"></div><small class="ed-hint">Paste (Ctrl/Cmd+V) atau drag gambar langsung ke kolom isi. Tab / Shift+Tab mengatur indent di dalam list.</small></div>
+</div>`;
     }).join('')}<button type="button" class="btn btn-subtle" data-act="add-section" data-arr="${base}">+ Tambah bagian</button></div>`;
   }
   function lessonCard(l, i, n) {
@@ -210,14 +217,16 @@
       <div class="ed-item-foot"><button type="button" class="btn btn-outline" data-act="preview-lesson" data-i="${i}">Pratinjau modul</button></div></div></details>`;
   }
   function questionCard(q, i, n) {
-    const key = 'Q:' + i, opts = q.options || [];
+    const key = 'Q:' + i, opts = q.options || [], essay = q.type === 'essay';
+    const meta = essay ? `Essay · ${Number(q.points) || 5} poin` : q.answer === null || q.answer === undefined ? '<em class="hint-bad">jawaban belum dipilih</em>' : `Jawaban: ${String.fromCharCode(65 + Number(q.answer))} · ${Number(q.points) || 1} poin`;
     return `<details class="ed-item" data-key="${key}" ${openKeys.has(key) ? 'open' : ''}>
-      <summary><span class="ed-num">${i + 1}</span><span class="ed-title">${esc(q.q || 'Pertanyaan baru')}</span><span class="ed-meta">${q.answer === null || q.answer === undefined ? '<em class="hint-bad">jawaban belum dipilih</em>' : 'Jawaban: ' + String.fromCharCode(65 + Number(q.answer))}</span>${tools('questions', i, n, 'pertanyaan')}</summary>
-      <div class="ed-body">${fText('Pertanyaan', `questions.${i}.q`, {rows: 2, max: 600})}
-      <span class="ed-label">Pilihan jawaban <small>(pilih bulatan pada jawaban yang benar)</small></span>
+      <summary><span class="ed-num">${i + 1}</span><span class="ed-title">${essay ? '<span class="q-kind">Essay</span>' : ''}${esc(q.q || 'Pertanyaan baru')}</span><span class="ed-meta">${meta}</span>${tools('questions', i, n, 'pertanyaan')}</summary>
+      <div class="ed-body"><div class="ed-row">${fSelect('Tipe soal', `questions.${i}.type`, [['mc', 'Pilihan ganda'], ['essay', 'Essay (dinilai admin)']], {rerender: true})}<label>Poin<input data-f="questions.${i}.points" data-num type="number" min="1" max="100" step="1" value="${esc(q.points ?? (essay ? 5 : 1))}" /><small>${essay ? 'Nilai maksimal soal ini.' : 'Bobot soal ini dalam skor.'}</small></label></div>
+      ${fText('Pertanyaan', `questions.${i}.q`, {rows: essay ? 3 : 2, max: essay ? 2000 : 600})}
+      ${essay ? fText('Rubrik / contoh jawaban', `questions.${i}.rubric`, {rows: 4, max: 4000, hint: 'Hanya terlihat oleh penilai. Setelah dinilai, ditampilkan ke peserta sebagai pembahasan.'}) : `<span class="ed-label">Pilihan jawaban <small>(pilih bulatan pada jawaban yang benar)</small></span>
       <div class="ed-options">${opts.map((o, j) => `<div class="ed-option"><input type="radio" name="ans-${i}" data-f="questions.${i}.answer" data-num value="${j}" ${Number(q.answer) === j && q.answer !== null ? 'checked' : ''} aria-label="Tandai pilihan ${String.fromCharCode(65 + j)} sebagai jawaban benar" /><span class="answer-letter">${String.fromCharCode(65 + j)}</span><input type="text" data-f="questions.${i}.options.${j}" value="${esc(o)}" maxlength="400" placeholder="Pilihan ${String.fromCharCode(65 + j)}" />${opts.length > 2 ? `<button type="button" class="mini mini-danger" data-act="remove-option" data-q="${i}" data-i="${j}" aria-label="Hapus pilihan">✕</button>` : ''}</div>`).join('')}
       ${opts.length < 6 ? `<button type="button" class="btn btn-subtle" data-act="add-option" data-q="${i}">+ Tambah pilihan</button>` : ''}</div>
-      ${fText('Pembahasan', `questions.${i}.why`, {rows: 2, max: 2000, hint: 'Ditampilkan ke peserta setelah quiz dikumpulkan.'})}</div></details>`;
+      ${fText('Pembahasan', `questions.${i}.why`, {rows: 2, max: 2000, hint: 'Ditampilkan ke peserta setelah quiz dikumpulkan.'})}`}</div></details>`;
   }
   function renderEditor() {
     destroyRtes();
@@ -230,7 +239,7 @@
     } else if (kind === 'quiz') {
       const courses = items.filter(i => i.kind === 'course');
       body = `<section class="ed-card"><h2>Informasi quiz</h2><div class="form-grid">${fInput('Judul', 'title', {max: 140, cls: 'span-2'})}${fInput('Kategori', 'category', {max: 60, list: 'cat-list'})}${fInput('Estimasi (menit)', 'minutes', {num: true})}${fSelect('Warna kartu', 'color', COLORS)}${fSelect('Course terkait', 'course', [['', '— Tidak ada —'], ...courses.map(c => [c.id, c.title + (c.status === 'draft' ? ' (belum tayang)' : '')])])}</div>${fText('Deskripsi', 'description', {rows: 2, max: 500})}${catList()}<p class="ed-note">Nilai lulus latihan: 80. Peserta bisa mengulang tanpa batas.</p></section>
-        <section class="ed-card"><div class="ed-card-head"><h2>Pertanyaan <span class="count">${d.questions.length}</span></h2></div>${d.questions.map((q, i) => questionCard(q, i, d.questions.length)).join('')}<button type="button" class="btn btn-subtle" data-act="add-question">+ Tambah pertanyaan</button></section>`;
+        <section class="ed-card"><div class="ed-card-head"><h2>Pertanyaan <span class="count">${d.questions.length}</span></h2></div>${d.questions.map((q, i) => questionCard(q, i, d.questions.length)).join('')}<button type="button" class="btn btn-subtle" data-act="add-question">+ Pilihan ganda</button> <button type="button" class="btn btn-subtle" data-act="add-question" data-type="essay">+ Essay</button></section>`;
     } else {
       body = `<section class="ed-card"><h2>Informasi artikel</h2><div class="form-grid">${fInput('Judul', 'title', {max: 140, cls: 'span-2'})}${fInput('Kategori / topik', 'category', {max: 60, list: 'cat-list'})}${fInput('Estimasi baca (menit)', 'minutes', {num: true})}${fSelect('Warna kartu', 'color', COLORS)}${fSelect('Ilustrasi', 'art', ARTS)}</div>${fText('Ringkasan pembuka', 'description', {rows: 2, max: 500})}
         <label class="check"><input type="checkbox" data-f="featured" data-bool ${d.featured ? 'checked' : ''} /> Jadikan Editor's Pick di Knowledge Center</label>${catList()}</section>
@@ -265,11 +274,16 @@
     else if (el.dataset.num !== undefined) v = el.value === '' ? null : Number(el.value);
     if (el.dataset.video !== undefined) {
       const id = ytId(v), hint = el.parentElement.querySelector('[data-video-hint]');
-      hint.textContent = id === null ? 'Link YouTube tidak dikenali.' : id ? 'Video terdeteksi ✓' : 'Opsional. Tempel link video YouTube.';
+      hint.textContent = id === null ? 'Link YouTube tidak dikenali.' : id ? 'Video terdeteksi ✓' : 'Opsional. Tampil di atas gambar & isi. Untuk video di tengah teks, pakai tombol ▶ di toolbar Isi.';
       hint.className = id === null ? 'hint-bad' : id ? 'hint-ok' : '';
       setPath(editor.draft, p, v.trim() ? {url: v.trim()} : undefined);
     } else setPath(editor.draft, p, v);
     markDirty();
+    if (el.dataset.rerender !== undefined) {
+      const m = p.match(/^questions\.(\d+)\.type$/);
+      if (m) {const q = editor.draft.questions[m[1]]; if (v === 'essay') {q.points = q.points > 1 ? q.points : 5; if (!q.rubric && q.why) q.rubric = q.why;} else {q.points = q.points && q.points !== 5 ? q.points : 1; if (!q.options?.length) q.options = ['', '', '', '']; q.answer ??= null;} openKeys.add('Q:' + m[1]);}
+      renderEditor();
+    }
   }
   main.addEventListener('input', e => {if (e.target.dataset.f && e.target.type !== 'radio' && e.target.type !== 'checkbox') onField(e.target);});
   main.addEventListener('change', e => {if (e.target.dataset.f && (e.target.type === 'radio' || e.target.type === 'checkbox' || e.target.tagName === 'SELECT')) onField(e.target);});
@@ -295,7 +309,7 @@
     return (sections || []).map(s => {
       const paras = `<div class="rich">${sectionHtml(s)}</div>`; // HTML dari editor (sudah disaring server saat disimpan)
       const v = s.video ? ytId(s.video.url ?? s.video.youtubeId) : '';
-      return `<section class="content-section">${s.heading ? `<h4>${esc(s.heading)}</h4>` : ''}${paras}${s.image?.url ? `<figure class="content-media"><img src="${esc(s.image.url)}" alt="${esc(s.image.alt)}" />${s.image.caption ? `<figcaption>${esc(s.image.caption)}</figcaption>` : ''}</figure>` : ''}${v ? `<div class="content-video"><iframe src="https://www.youtube-nocookie.com/embed/${v}" title="Video" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>` : ''}</section>`;
+      return `<section class="content-section">${s.heading ? `<h4>${esc(s.heading)}</h4>` : ''}${v ? `<div class="content-video"><iframe src="https://www.youtube-nocookie.com/embed/${v}" title="Video" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>` : ''}${s.image?.url ? `<figure class="content-media"><img src="${esc(s.image.url)}" alt="${esc(s.image.alt)}" />${s.image.caption ? `<figcaption>${esc(s.image.caption)}</figcaption>` : ''}</figure>` : ''}${paras}</section>`;
     }).join('');
   }
   async function uploadImage(path, button) {
@@ -394,8 +408,8 @@
     && `${u.name} ${u.email}`.toLowerCase().includes(sf.q.trim().toLowerCase()));
   const visibleQuizzes = d => d.quizzes.filter(q => !sf.category || q.category === sf.category);
   const cellOf = (d, uid, qid) => d.cells[uid]?.[qid] || null;
-  const userStats = (d, u, qs) => {const v = qs.map(q => cellOf(d, u.id, q.id)).filter(Boolean); return {done: v.length, passed: v.filter(c => c.best >= 80).length, avg: v.length ? Math.round(v.reduce((s, c) => s + c.best, 0) / v.length) : null};};
-  const quizStats = (d, q, us) => {const v = us.map(u => cellOf(d, u.id, q.id)).filter(Boolean); return {done: v.length, passed: v.filter(c => c.best >= 80).length, avg: v.length ? Math.round(v.reduce((s, c) => s + c.best, 0) / v.length) : null, attempts: v.reduce((s, c) => s + c.attempts, 0)};};
+  const userStats = (d, u, qs) => {const v = qs.map(q => cellOf(d, u.id, q.id)).filter(c => c && c.best !== null); return {done: v.length, passed: v.filter(c => c.best >= 80).length, avg: v.length ? Math.round(v.reduce((s, c) => s + c.best, 0) / v.length) : null};};
+  const quizStats = (d, q, us) => {const all = us.map(u => cellOf(d, u.id, q.id)).filter(Boolean), v = all.filter(c => c.best !== null); return {done: all.length, pending: all.filter(c => c.pending).length, passed: v.filter(c => c.best >= 80).length, avg: v.length ? Math.round(v.reduce((s, c) => s + c.best, 0) / v.length) : null, attempts: all.reduce((s, c) => s + c.attempts, 0)};};
   const cmp = (a, b, dir) => (a === null || a === undefined) ? 1 : (b === null || b === undefined) ? -1 : (typeof a === 'string' ? a.localeCompare(b, 'id') : a - b) * dir;
   const sortHead = (label, key, state, cls = '') => {const on = state.key === key; return `<th class="${cls}" aria-sort="${on ? (state.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" class="sort-btn" data-act="score-sort" data-key="${esc(key)}">${label}<span aria-hidden="true">${on ? (state.dir > 0 ? '▲' : '▼') : '↕'}</span></button></th>`;};
   function scoreFilters(withCategory) {
@@ -429,10 +443,11 @@
     const cellHtml = (u, q) => {
       const c = cellOf(d, u.id, q.id);
       if (!c) return '<td class="sc-cell"><span class="sc sc-none" title="Belum mengerjakan">—</span></td>';
-      const pass = c.best >= 80, tip = `${u.name} · ${q.title}: terbaik ${c.best}, terakhir ${c.last}, ${c.attempts} percobaan, ${fmtDate(c.lastAt)}${pass ? ' · Lulus' : ' · Belum lulus'}`;
-      return `<td class="sc-cell"><a class="sc ${pass ? 'sc-pass' : 'sc-fail'}" href="#raport/${u.id}" title="${esc(tip)}" aria-label="${esc(tip)}">${c.best}${pass ? CHECK : ''}</a>${c.attempts > 1 ? `<small class="sc-tries">${c.attempts}×</small>` : ''}</td>`;
+      if (c.best === null) return `<td class="sc-cell"><a class="sc sc-wait" href="#grading" title="${esc(u.name)} · ${esc(q.title)}: essay menunggu penilaian">⏳</a></td>`;
+      const pass = c.best >= 80, tip = `${u.name} · ${q.title}: terbaik ${c.best}, terakhir ${c.last}, ${c.attempts} percobaan, ${fmtDate(c.lastAt)}${pass ? ' · Lulus' : ' · Belum lulus'}${c.pending ? ` · ${c.pending} menunggu penilaian` : ''}`;
+      return `<td class="sc-cell"><a class="sc ${pass ? 'sc-pass' : 'sc-fail'}" href="#raport/${u.id}" title="${esc(tip)}" aria-label="${esc(tip)}">${c.best}${pass ? CHECK : ''}</a>${c.attempts > 1 ? `<small class="sc-tries">${c.attempts}×</small>` : ''}${c.pending ? '<small class="sc-tries" title="Menunggu penilaian">⏳</small>' : ''}</td>`;
     };
-    body.innerHTML = `<p class="score-meta">${us.length} peserta · ${qs.length} quiz · skor terbaik, lulus ≥ 80 (✓) · angka kecil = jumlah percobaan</p>
+    body.innerHTML = `<p class="score-meta">${us.length} peserta · ${qs.length} quiz · skor terbaik, lulus ≥ 80 (✓) · angka kecil = jumlah percobaan · ⏳ = essay menunggu penilaian</p>
       ${us.length ? `<div class="score-wrap"><table class="score-matrix"><thead><tr>${sortHead('Peserta', 'name', sf.sort, 'sm-user')}
         ${qs.map(q => {const on = sf.sort.key === 'q:' + q.id; return `<th class="sm-q" aria-sort="${on ? (sf.sort.dir > 0 ? 'ascending' : 'descending') : 'none'}"><a href="#scores/${esc(q.id)}" title="Detail: ${esc(q.title)}">${esc(q.title)}</a><button type="button" class="sort-btn mini-sort" data-act="score-sort" data-key="q:${esc(q.id)}" aria-label="Urutkan menurut ${esc(q.title)}">${on ? (sf.sort.dir > 0 ? '▲' : '▼') : '↕'}</button></th>`;}).join('')}
         ${sortHead('Lulus', 'passed', sf.sort, 'sm-num')}${sortHead('Rata-rata', 'avg', sf.sort, 'sm-num')}</tr></thead>
@@ -457,10 +472,10 @@
     const us = visibleUsers(d), st = quizStats(d, q, us), rows = quizRows(d, q);
     $('#breadcrumb').textContent = 'Admin · Nilai Quiz';
     $('#qs-head').innerHTML = heading(esc(q.category || 'Quiz'), esc(q.title), `${q.questions} pertanyaan · lulus ≥ 80`, '<button class="btn btn-outline" data-act="scores-csv">Unduh CSV</button>');
-    const chip = c => !c ? '<span class="st st-draft">Belum mengerjakan</span>' : c.best >= 80 ? `<span class="st st-live sc-status">${CHECK}Lulus</span>` : '<span class="st st-changed">Belum lulus</span>';
-    $('#score-body').innerHTML = `<section class="stats-grid score-stats">${[['Sudah mengerjakan', `${st.done}<em>/${us.length}</em>`], ['Lulus', st.passed], ['Rata-rata skor terbaik', st.avg ?? '—'], ['Total percobaan', st.attempts]].map(([l, v]) => `<div class="stat-card"><div><div class="stat-label">${l}</div><div class="stat-value">${v}</div></div></div>`).join('')}</section>
+    const chip = c => !c ? '<span class="st st-draft">Belum mengerjakan</span>' : c.best === null ? '<span class="st st-changed">Menunggu penilaian</span>' : c.best >= 80 ? `<span class="st st-live sc-status">${CHECK}Lulus</span>` : '<span class="st st-changed">Belum lulus</span>';
+    $('#score-body').innerHTML = `<section class="stats-grid score-stats">${[['Sudah mengerjakan', `${st.done}<em>/${us.length}</em>`], ['Lulus', st.passed], ['Rata-rata skor terbaik', st.avg ?? '—'], ['Total percobaan', st.attempts + (st.pending ? ` <em>· ${st.pending} menunggu</em>` : '')]].map(([l, v]) => `<div class="stat-card"><div><div class="stat-label">${l}</div><div class="stat-value">${v}</div></div></div>`).join('')}</section>
       ${rows.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr>${sortHead('Peserta', 'name', sf.qsort)}${sortHead('Skor terbaik', 'best', sf.qsort)}${sortHead('Skor terakhir', 'last', sf.qsort)}${sortHead('Percobaan', 'attempts', sf.qsort)}${sortHead('Status', 'status', sf.qsort)}${sortHead('Terakhir dikerjakan', 'lastAt', sf.qsort)}<th class="col-actions">Raport</th></tr></thead><tbody>
-      ${rows.map(u => {const c = cellOf(d, u.id, q.id); return `<tr><td><span class="row-title">${esc(u.name)}</span><small>${esc(u.email)}${u.role === 'admin' ? ' · Admin' : ''}${u.status === 'disabled' ? ' · Nonaktif' : ''}</small></td><td><b>${c ? c.best : '—'}</b></td><td>${c ? c.last : '—'}</td><td>${c ? c.attempts : 0}</td><td>${chip(c)}</td><td><span class="when">${c ? fmtDate(c.lastAt) : '—'}</span></td><td class="col-actions"><a class="btn btn-outline" href="#raport/${u.id}">Raport</a></td></tr>`;}).join('')}</tbody></table></div>` : '<div class="raport-empty">Tidak ada peserta yang cocok dengan filter.</div>'}`;
+      ${rows.map(u => {const c = cellOf(d, u.id, q.id); return `<tr><td><span class="row-title">${esc(u.name)}</span><small>${esc(u.email)}${u.role === 'admin' ? ' · Admin' : ''}${u.status === 'disabled' ? ' · Nonaktif' : ''}</small></td><td><b>${c?.best ?? '—'}</b></td><td>${c?.last ?? '—'}</td><td>${c ? c.attempts : 0}</td><td>${chip(c)}</td><td><span class="when">${c ? fmtDate(c.lastAt) : '—'}</span></td><td class="col-actions"><a class="btn btn-outline" href="#raport/${u.id}">Raport</a></td></tr>`;}).join('')}</tbody></table></div>` : '<div class="raport-empty">Tidak ada peserta yang cocok dengan filter.</div>'}`;
   }
   async function onScoreFilter(el) {
     const k = el.dataset.sf;
@@ -488,7 +503,7 @@
     if (location.hash.startsWith('#scores/')) {
       const q = d.quizzes.find(x => x.id === decodeURIComponent(location.hash.split('/')[1])); if (!q) return;
       saveCsv([['Nama', 'Email', 'Status akun', 'Skor terbaik', 'Skor terakhir', 'Percobaan', 'Status quiz', 'Terakhir dikerjakan'],
-        ...quizRows(d, q).map(u => {const c = cellOf(d, u.id, q.id); return [u.name, u.email, status(u), c?.best ?? '', c?.last ?? '', c?.attempts ?? 0, !c ? 'Belum mengerjakan' : c.best >= 80 ? 'Lulus' : 'Belum lulus', c ? fmtDate(c.lastAt) : ''];})], `nilai-${q.id}-${day}.csv`);
+        ...quizRows(d, q).map(u => {const c = cellOf(d, u.id, q.id); return [u.name, u.email, status(u), c?.best ?? '', c?.last ?? '', c?.attempts ?? 0, !c ? 'Belum mengerjakan' : c.best === null ? 'Menunggu penilaian' : c.best >= 80 ? 'Lulus' : 'Belum lulus', c ? fmtDate(c.lastAt) : ''];})], `nilai-${q.id}-${day}.csv`);
     } else {
       const qs = visibleQuizzes(d);
       saveCsv([['Nama', 'Email', 'Status akun', ...qs.map(q => q.title), 'Quiz lulus', 'Rata-rata skor terbaik'],
@@ -517,6 +532,163 @@
       ...report.users.map(u => [u.name, u.email, u.role === 'admin' ? 'Admin' : 'Peserta', USTATUS[u.status][0], u.coursesEnrolled, u.lessonsCompleted, u.quizzesPassed, u.lastActivity ? fmtDate(u.lastActivity) : '', u.lastSignInAt ? fmtDate(u.lastSignInAt) : ''])];
     const blob = new Blob(['﻿' + rows.map(r => r.map(cell).join(',')).join('\r\n')], {type: 'text/csv;charset=utf-8'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `learning-hub-peserta-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // ---------- penilaian essay ----------
+  const pts = n => n === null || n === undefined ? '—' : String(Math.round(Number(n) * 100) / 100).replace('.', ',');
+  async function renderGrading(tab) {
+    const {items: list} = await api.get('/api/admin/grading?status=' + tab);
+    const tabs = `<div class="seg-tabs" role="tablist">${[['pending', 'Menunggu penilaian'], ['graded', 'Sudah dinilai']].map(([k, l]) => `<a role="tab" class="seg-tab ${tab === k ? 'active' : ''}" aria-selected="${tab === k}" href="#grading${k === 'graded' ? '/graded' : ''}">${l}${k === 'pending' && pendingCount ? ` <span class="nav-badge">${pendingCount}</span>` : ''}</a>`).join('')}</div>`;
+    main.innerHTML = `<div class="content-fade">${heading('Quiz essay', 'Penilaian', 'Jawaban essay peserta dinilai di sini. Skor akhir baru muncul di quiz, raport, dan Nilai Quiz setelah disimpan.')}${tabs}
+      ${list.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr><th>Peserta</th><th>Quiz</th><th>Dikirim</th>${tab === 'graded' ? '<th>Skor</th><th>Dinilai</th>' : ''}<th class="col-actions">Aksi</th></tr></thead><tbody>
+      ${list.map(a => `<tr><td><span class="row-title">${esc(a.name)}</span><small>${esc(a.email)}</small></td><td>${esc(a.quizTitle || a.quizId)}</td><td><span class="when">${fmtDate(a.createdAt)}</span></td>${tab === 'graded' ? `<td><b>${a.score}</b>${a.score >= 80 ? ` <span class="st st-live">Lulus</span>` : ''}</td><td><span class="when">${fmtDate(a.gradedAt)}${a.grader ? ' · ' + esc(a.grader) : ''}</span></td>` : ''}<td class="col-actions"><a class="btn ${tab === 'pending' ? 'btn-orange' : 'btn-outline'}" href="#grading/${a.userId}/${a.attemptId}">${tab === 'pending' ? 'Nilai' : 'Lihat / ubah'}</a></td></tr>`).join('')}</tbody></table></div>`
+      : `<div class="raport-empty">${tab === 'pending' ? 'Tidak ada jawaban essay yang menunggu penilaian. 🎉' : 'Belum ada essay yang dinilai.'}</div>`}</div>`;
+  }
+  let grading = null;
+  async function renderGradeForm(uid, aid) {
+    const {attempt: a} = await api.get(`/api/admin/grading/${uid}/${aid}`);
+    grading = a;
+    const nl = t => esc(t).replace(/\n/g, '<br>');
+    main.innerHTML = `<div class="content-fade"><a class="back-link" href="#grading${a.status === 'graded' ? '/graded' : ''}">← Penilaian</a>
+      ${heading(esc(a.quizTitle || a.quizId), esc(a.name), `${esc(a.email)} · dikirim ${fmtDate(a.createdAt)}${a.status === 'graded' ? ` · dinilai ${fmtDate(a.gradedAt)}${a.grader ? ' oleh ' + esc(a.grader) : ''}` : ''}`)}
+      <form id="grade-form" class="grade-form">${a.review.map((r, i) => r.type === 'essay' ? `<section class="grade-item"><div class="grade-q"><span class="ed-num">${i + 1}</span><div><span class="q-kind">Essay · ${r.points} poin</span><p>${nl(r.q)}</p></div></div>
+        ${r.rubric ? `<details class="grade-rubric" open><summary>Rubrik / contoh jawaban</summary><div>${nl(r.rubric)}</div></details>` : '<p class="grade-hint">Belum ada rubrik untuk soal ini.</p>'}
+        <span class="ed-label">Jawaban peserta</span><div class="grade-answer">${nl(r.answerText)}</div>
+        <div class="grade-inputs"><label>Nilai<span class="grade-num"><input type="number" name="earned-${i}" data-grade="${i}" min="0" max="${r.points}" step="0.5" value="${r.earned ?? ''}" required inputmode="decimal" /> / ${r.points}</span></label>
+        <label>Komentar untuk peserta <small>(opsional)</small><textarea name="feedback-${i}" rows="3" maxlength="2000">${esc(r.feedback || '')}</textarea></label></div></section>`
+        : `<section class="grade-item grade-mc"><div class="grade-q"><span class="ed-num">${i + 1}</span><div><span class="q-kind q-mc">Pilihan ganda · otomatis</span><p>${nl(r.q)}</p></div></div><p class="grade-mc-line ${r.correct ? 'ok' : 'bad'}">${r.correct ? '✓ Benar' : '✕ Salah'} · jawaban: ${esc(r.options?.[r.selected] ?? '—')}${r.correct ? '' : ` · kunci: ${esc(r.options?.[r.answer] ?? '—')}`} · <b>${pts(r.earned)}/${r.points ?? 1}</b> poin</p></section>`).join('')}
+      <div class="grade-bar"><div id="grade-total"></div><button class="btn btn-orange" type="submit">${a.status === 'graded' ? 'Simpan perubahan nilai' : 'Simpan nilai'}</button></div></form></div>`;
+    updateGradeTotal();
+  }
+  function updateGradeTotal() {
+    if (!grading) return; const box = $('#grade-total'); if (!box) return;
+    let earned = 0, max = 0, missing = 0;
+    grading.review.forEach((r, i) => {
+      max += r.points ?? 1;
+      if (r.type === 'essay') {const v = $(`[data-grade="${i}"]`).value; if (v === '') missing++; else earned += Number(v) || 0;} else earned += r.earned || 0;
+    });
+    const score = Math.round(earned / max * 100);
+    box.innerHTML = `Total <b>${pts(earned)}</b> / ${pts(max)} poin · skor <b>${missing ? '—' : score}</b>/100 ${missing ? `<small>${missing} essay belum diberi nilai</small>` : score >= 80 ? '<span class="st st-live">Lulus</span>' : '<span class="st st-changed">Belum lulus</span>'}`;
+  }
+  main.addEventListener('input', e => {if (e.target.dataset?.grade !== undefined) updateGradeTotal();});
+  main.addEventListener('submit', async e => {
+    if (e.target.id !== 'grade-form') return; e.preventDefault();
+    const f = e.target, btn = f.querySelector('[type=submit]');
+    const grades = grading.review.map((r, i) => r.type !== 'essay' ? null : {index: i, earned: Number(f.elements['earned-' + i].value), feedback: f.elements['feedback-' + i].value}).filter(Boolean);
+    btn.disabled = true;
+    try {
+      const r = await api.post(`/api/admin/grading/${grading.userId}/${grading.attemptId}`, {grades});
+      pendingCount = r.pending; toast(`Nilai tersimpan. Skor akhir ${r.score}/100.`);
+      location.hash = '#grading';
+    } catch (err) {toast(err.message, true); btn.disabled = false;}
+  });
+
+  // ---------- impor / ekspor quiz ----------
+  const QCOLS = ['quiz_id', 'judul_quiz', 'kategori', 'deskripsi', 'menit', 'course_id', 'tipe', 'pertanyaan', 'pilihan_a', 'pilihan_b', 'pilihan_c', 'pilihan_d', 'pilihan_e', 'pilihan_f', 'jawaban_benar', 'pembahasan_rubrik', 'poin'];
+  const QWIDTHS = [18, 30, 18, 34, 7, 20, 10, 50, 24, 24, 24, 24, 18, 18, 10, 44, 6];
+  const HELP = [['Kolom', 'Isi'],
+    ['quiz_id', 'Kosongkan untuk membuat quiz baru. Isi dengan ID quiz yang sudah ada untuk MENGGANTI seluruh pertanyaannya (lihat file ekspor).'],
+    ['judul_quiz', 'Wajib untuk quiz baru. Baris berikutnya dengan quiz_id & judul_quiz kosong dianggap pertanyaan quiz yang sama.'],
+    ['kategori, deskripsi, menit, course_id', 'Cukup diisi di baris pertama setiap quiz. course_id menautkan quiz ke course (lihat sheet "Daftar course").'],
+    ['tipe', 'PG (pilihan ganda) atau Essay.'],
+    ['pertanyaan', 'Wajib.'],
+    ['pilihan_a … pilihan_f', 'Khusus PG: minimal 2 pilihan, isi berurutan dari A.'],
+    ['jawaban_benar', 'Khusus PG: huruf A–F.'],
+    ['pembahasan_rubrik', 'PG: pembahasan setelah quiz. Essay: rubrik/contoh jawaban untuk penilai (tampil ke peserta setelah dinilai).'],
+    ['poin', 'Opsional. Default PG 1, Essay 5. Angka bulat 1–100.'],
+    ['Catatan', 'Hasil impor disimpan sebagai DRAFT. Periksa lalu klik Publish di daftar quiz. Quiz yang sudah tayang tetap tampil versi lama sampai di-publish ulang.']];
+  async function loadXlsx() {
+    if (window.HubXlsx) return window.HubXlsx;
+    await new Promise((resolve, reject) => {const s = document.createElement('script'); s.src = '/xlsx-tools.js'; s.onload = resolve; s.onerror = () => reject(new Error('Modul Excel gagal dimuat. Muat ulang halaman.')); document.head.append(s);});
+    return window.HubXlsx;
+  }
+  const courseSheet = () => ({name: 'Daftar course', rows: [['course_id', 'Judul course'], ...items.filter(i => i.kind === 'course').map(c => [c.id, c.title])], widths: [28, 50]});
+  function quizRowsOf(q) {
+    return (q.questions || []).map((x, j) => {
+      const essay = x.type === 'essay', opts = essay ? [] : x.options || [];
+      return [q.id, j ? '' : q.title, j ? '' : q.category, j ? '' : q.description, j ? '' : q.minutes, j ? '' : q.course || '', essay ? 'Essay' : 'PG', x.q,
+        ...[0, 1, 2, 3, 4, 5].map(k => opts[k] ?? ''), essay ? '' : (Number.isInteger(x.answer) ? String.fromCharCode(65 + x.answer) : ''), essay ? x.rubric || '' : x.why || '', x.points ?? (essay ? 5 : 1)];
+    });
+  }
+  async function quizTemplate() {
+    const X = await loadXlsx();
+    const sample = [
+      ['', 'Contoh: Dasar Pelayanan', 'Customer Experience', 'Latihan singkat pelayanan pelanggan.', 5, '', 'PG', 'Apa langkah pertama saat pelanggan mengeluh?', 'Mendengarkan sampai selesai', 'Langsung memberi solusi', 'Mengalihkan ke tim lain', '', '', '', 'A', 'Mendengarkan membuat pelanggan merasa dihargai.', 1],
+      ['', '', '', '', '', '', 'PG', 'Kapan sebaiknya memberi update status?', 'Hanya jika ditanya', 'Secara proaktif sesuai janji waktu', '', '', '', '', 'B', 'Update proaktif menjaga kepercayaan.', 1],
+      ['', '', '', '', '', '', 'Essay', 'Jelaskan cara menyampaikan penolakan visa kepada pelanggan.', '', '', '', '', '', '', '', 'Poin penting: empati, jelaskan alasan resmi, tawarkan langkah berikutnya.', 5]];
+    await X.write([{name: 'Quiz', rows: [QCOLS, ...sample], widths: QWIDTHS}, {name: 'Petunjuk', rows: HELP, widths: [34, 110]}, courseSheet()], 'template-impor-quiz.xlsx');
+  }
+  async function quizExport() {
+    const [{quizzes: list}, X] = await Promise.all([api.get('/api/admin/export/quizzes'), loadXlsx()]);
+    if (!list.length) return toast('Belum ada quiz untuk diekspor.', true);
+    await X.write([{name: 'Quiz', rows: [QCOLS, ...list.flatMap(quizRowsOf)], widths: QWIDTHS}, {name: 'Petunjuk', rows: HELP, widths: [34, 110]}, courseSheet()], `quiz-learning-hub-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast(`${list.length} quiz diekspor (termasuk draft).`);
+  }
+  function parseCsv(text) {
+    text = text.replace(/^﻿/, '');
+    const first = text.split(/\r?\n/, 1)[0], delim = [';', ',', '\t'].sort((a, b) => first.split(b).length - first.split(a).length)[0];
+    const rows = []; let row = [], cell = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) {if (c === '"') {if (text[i + 1] === '"') {cell += '"'; i++;} else q = false;} else cell += c;}
+      else if (c === '"' && cell === '') q = true;
+      else if (c === delim) {row.push(cell); cell = '';}
+      else if (c === '\n' || c === '\r') {if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = '';}
+      else cell += c;
+    }
+    if (cell !== '' || row.length) {row.push(cell); rows.push(row);}
+    return rows;
+  }
+  const ALIAS = {id: 'quiz_id', quiz: 'quiz_id', judul: 'judul_quiz', title: 'judul_quiz', category: 'kategori', description: 'deskripsi', durasi: 'menit', minutes: 'menit', course: 'course_id', type: 'tipe', jenis: 'tipe', soal: 'pertanyaan', question: 'pertanyaan', jawaban: 'jawaban_benar', kunci: 'jawaban_benar', answer: 'jawaban_benar', pembahasan: 'pembahasan_rubrik', rubrik: 'pembahasan_rubrik', explanation: 'pembahasan_rubrik', points: 'poin', bobot: 'poin'};
+  function rowsToQuizzes(rows) {
+    const norm = h => {const k = String(h ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, ''); return ALIAS[k] || k.replace(/^opsi_/, 'pilihan_');};
+    const hi = rows.findIndex(r => r.some(c => norm(c) === 'pertanyaan'));
+    if (hi < 0) throw new Error('Kolom "pertanyaan" tidak ditemukan. Gunakan template dari tombol "Unduh template".');
+    const cols = rows[hi].map(norm), get = (r, k) => {const i = cols.indexOf(k); const v = i < 0 ? '' : r[i]; return v === null || v === undefined ? '' : v instanceof Date ? v.toISOString() : String(v).trim();};
+    const quizzes = []; let cur = null;
+    rows.slice(hi + 1).forEach((r, n) => {
+      const row = hi + n + 2;
+      if (!r.some(c => String(c ?? '').trim())) return;
+      const id = get(r, 'quiz_id'), title = get(r, 'judul_quiz');
+      if (!cur || (id && id !== cur.id) || (!id && title && title !== cur.title)) {
+        cur = {row, id: id || undefined, title, category: get(r, 'kategori'), description: get(r, 'deskripsi'), minutes: get(r, 'menit'), course: get(r, 'course_id'), questions: []};
+        quizzes.push(cur);
+      }
+      if (get(r, 'pertanyaan') || get(r, 'tipe'))
+        cur.questions.push({row, type: get(r, 'tipe') || 'PG', q: get(r, 'pertanyaan'), options: ['a', 'b', 'c', 'd', 'e', 'f'].map(x => get(r, 'pilihan_' + x)), answer: get(r, 'jawaban_benar'), explanation: get(r, 'pembahasan_rubrik'), points: get(r, 'poin')});
+    });
+    if (!quizzes.length) throw new Error('File tidak berisi baris pertanyaan.');
+    return quizzes;
+  }
+  let importing = null;
+  function quizImport() {
+    const input = document.createElement('input'); input.type = 'file'; input.accept = '.xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    input.addEventListener('change', async () => {
+      const file = input.files[0]; if (!file) return;
+      try {
+        if (file.size > 5 * 1024 * 1024) throw new Error('File terlalu besar (maksimal 5 MB).');
+        const rows = /\.csv$/i.test(file.name) || file.type === 'text/csv' ? parseCsv(await file.text()) : await (await loadXlsx()).read(file);
+        const quizzes = rowsToQuizzes(rows);
+        const r = await api.post('/api/admin/import/quizzes', {dryRun: true, quizzes});
+        importing = {quizzes, name: file.name}; showImportPreview(r);
+      } catch (e) {toast(e.message, true);}
+    });
+    input.click();
+  }
+  function showImportPreview(r) {
+    const s = r.summary;
+    showModal('Pratinjau impor quiz', `<p class="import-file">${esc(importing.name)}</p>
+      ${r.errors.length ? `<div class="import-errors"><strong>${r.errors.length} masalah harus diperbaiki di file, lalu impor ulang:</strong><ul>${r.errors.slice(0, 50).map(e => `<li>${esc(e.message)}</li>`).join('')}${r.errors.length > 50 ? `<li>… dan ${r.errors.length - 50} lainnya</li>` : ''}</ul></div>` : `<p class="import-ok">✓ File valid: ${s.create} quiz baru, ${s.update} quiz diperbarui, ${s.questions} pertanyaan.</p>`}
+      ${!r.errors.length && r.items.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr><th>Quiz</th><th>Aksi</th><th>Pertanyaan</th><th>Catatan</th></tr></thead><tbody>${r.items.map(i => `<tr><td><span class="row-title">${esc(i.title)}</span>${i.id ? `<small>${esc(i.id)}</small>` : ''}</td><td>${i.action === 'create' ? '<span class="st st-draft">Baru</span>' : '<span class="st st-changed">Ganti pertanyaan</span>'}</td><td>${i.questions}${i.essays ? ` <small>(${i.essays} essay)</small>` : ''}</td><td>${i.published && i.action === 'update' ? 'Sedang tayang: peserta tetap melihat versi lama sampai di-publish ulang. ' : ''}${i.warning ? `<span class="hint-bad">${esc(i.warning)}</span>` : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      <div class="confirm-actions"><button class="btn btn-outline" data-act="close-modal">Batal</button>${r.errors.length ? '' : '<button class="btn btn-orange" data-act="import-commit">Simpan sebagai draft</button>'}</div>`, true);
+  }
+  async function importCommit(btn) {
+    btn.disabled = true;
+    const r = await api.post('/api/admin/import/quizzes', {dryRun: false, quizzes: importing.quizzes});
+    if (!r.ok) {showImportPreview(r); return;}
+    closeModal(); importing = null;
+    toast(`Impor selesai: ${r.summary.create} quiz baru, ${r.summary.update} diperbarui (draft). Publish untuk menayangkan.`);
+    await renderList('quiz');
   }
 
   // ---------- aksi ----------
@@ -551,7 +723,7 @@
         case 'publish': b.disabled = true; await publish(); break;
         case 'reload-editor': {const {kind, id} = editor; editor = null; await openEditor(kind, id); break;}
         case 'add-lesson': {const id = newId(); d.lessons.push({id, title: '', duration: 5, intro: '', sections: [{heading: '', html: ''}]}); openKeys.add('L:' + id); markDirty(); renderEditor(); break;}
-        case 'add-question': d.questions.push({q: '', options: ['', '', '', ''], answer: null, why: ''}); openKeys.add('Q:' + (d.questions.length - 1)); markDirty(); renderEditor(); break;
+        case 'add-question': d.questions.push(b.dataset.type === 'essay' ? {type: 'essay', q: '', points: 5, rubric: ''} : {type: 'mc', q: '', options: ['', '', '', ''], answer: null, why: '', points: 1}); openKeys.add('Q:' + (d.questions.length - 1)); markDirty(); renderEditor(); break;
         case 'add-section': getPath(d, b.dataset.arr).push({heading: '', html: ''}); markDirty(); renderEditor(); break;
         case 'add-option': d.questions[b.dataset.q].options.push(''); markDirty(); renderEditor(); break;
         case 'remove-option': {
@@ -596,6 +768,10 @@
         case 'resend': b.disabled = true; users = (await api.post(`/api/admin/users/${b.dataset.id}/resend`, {})).users; renderUserRows(); toast('Undangan dikirim ulang.'); break;
         case 'csv': downloadCsv(); break;
         case 'scores-csv': scoresCsv(); break;
+        case 'quiz-template': b.disabled = true; try {await quizTemplate();} finally {b.disabled = false;} break;
+        case 'quiz-export': b.disabled = true; try {await quizExport();} finally {b.disabled = false;} break;
+        case 'quiz-import': quizImport(); break;
+        case 'import-commit': await importCommit(b); break;
         case 'score-sort': {
           const st = location.hash.startsWith('#scores/') ? sf.qsort : sf.sort, k = b.dataset.key;
           if (st.key === k) st.dir *= -1; else {st.key = k; st.dir = k === 'name' ? 1 : -1;}

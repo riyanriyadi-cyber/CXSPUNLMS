@@ -23289,10 +23289,10 @@ var COLOR_RE = /^(#[0-9a-f]{3}|#[0-9a-f]{6}|rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\
 var PX_RE = /^\d{1,4}px$/;
 var esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 var plainToHtml = (text) => String(text || "").split(/\n{2,}/).map((p) => p.trim()).filter(Boolean).map((p) => `<p>${esc(p).replace(/\n/g, "<br>")}</p>`).join("");
-var hasRichContent = (html) => /<(img|table|hr)\b/i.test(html) || html.replace(/<[^>]+>/g, "").replace(/&nbsp;|\s/g, "").length > 0;
+var hasRichContent = (html) => /<(img|table|hr|iframe)\b/i.test(html) || html.replace(/<[^>]+>/g, "").replace(/&nbsp;|\s/g, "").length > 0;
 function sanitizeRich(html, { mediaPrefix: mediaPrefix2 }) {
   return (0, import_sanitize_html.default)(String(html || ""), {
-    allowedTags: ["p", "br", "strong", "em", "u", "s", "span", "a", "ul", "ol", "li", "blockquote", "hr", "table", "colgroup", "col", "tbody", "thead", "tr", "th", "td", "img"],
+    allowedTags: ["p", "br", "strong", "em", "u", "s", "span", "a", "ul", "ol", "li", "blockquote", "hr", "table", "colgroup", "col", "tbody", "thead", "tr", "th", "td", "img", "div", "iframe"],
     allowedAttributes: {
       a: ["href", "target", "rel"],
       img: ["src", "alt", "data-size"],
@@ -23303,7 +23303,9 @@ function sanitizeRich(html, { mediaPrefix: mediaPrefix2 }) {
       td: ["colspan", "rowspan", "style"],
       ol: ["start"],
       col: ["style"],
-      blockquote: ["style"]
+      blockquote: ["style"],
+      div: ["data-youtube-video"],
+      iframe: ["src", "width", "height", "allowfullscreen", "title", "allow", "referrerpolicy", "loading"]
     },
     allowedStyles: { "*": {
       "text-align": [/^(left|center|right|justify)$/],
@@ -23315,7 +23317,8 @@ function sanitizeRich(html, { mediaPrefix: mediaPrefix2 }) {
       "width": [PX_RE]
     } },
     allowedSchemes: ["https", "http", "mailto"],
-    allowedSchemesByTag: { img: ["https", "http"] },
+    allowedSchemesByTag: { img: ["https", "http"], iframe: ["https"] },
+    allowedIframeHostnames: ["www.youtube-nocookie.com"],
     allowProtocolRelative: false,
     transformTags: {
       b: "strong",
@@ -23324,10 +23327,16 @@ function sanitizeRich(html, { mediaPrefix: mediaPrefix2 }) {
       del: "s",
       a: (tag, a) => ({ tagName: "a", attribs: { ...a.href ? { href: a.href } : {}, target: "_blank", rel: "noopener noreferrer" } }),
       p: (tag, a) => ({ tagName: "p", attribs: { ...a.style ? { style: a.style } : {}, .../^[1-4]$/.test(a["data-indent"] || "") ? { "data-indent": a["data-indent"] } : {} } }),
+      div: (tag, a) => ({ tagName: "div", attribs: "data-youtube-video" in a ? { "data-youtube-video": "" } : {} }),
+      // Video YouTube di dalam teks: hanya embed youtube-nocookie dengan ID valid; atribut lain ditetapkan server.
+      iframe: (tag, a) => {
+        const m = /^https:\/\/www\.youtube-nocookie\.com\/embed\/([A-Za-z0-9_-]{11})(?:\?(?:start=(\d{1,6}))?.*)?$/.exec(a.src || "");
+        return m ? { tagName: "iframe", attribs: { src: `https://www.youtube-nocookie.com/embed/${m[1]}${m[2] ? `?start=${m[2]}` : ""}`, width: "640", height: "360", title: "Video YouTube", allowfullscreen: "true", allow: "accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen", referrerpolicy: "strict-origin-when-cross-origin", loading: "lazy" } } : { tagName: "iframe", attribs: {} };
+      },
       img: (tag, a) => ({ tagName: "img", attribs: { src: a.src || "", alt: (a.alt || "").slice(0, 200), ...["s", "m", "l"].includes(a["data-size"]) ? { "data-size": a["data-size"] } : {} } })
     },
     // Gambar hanya dari bucket media proyek ini (gambar lain dibuang).
-    exclusiveFilter: (frame) => frame.tag === "img" && !(frame.attribs.src || "").startsWith(mediaPrefix2)
+    exclusiveFilter: (frame) => frame.tag === "img" && !(frame.attribs.src || "").startsWith(mediaPrefix2) || frame.tag === "iframe" && !frame.attribs.src
   });
 }
 
@@ -23434,10 +23443,16 @@ function normalize(kind, d, ctx) {
   if (kind === "quiz") {
     const questions = arr(d.questions, 60, "Pertanyaan").map((q, i) => {
       if (!q || typeof q !== "object") bad(`Pertanyaan ${i + 1} tidak valid.`);
+      if (q.type === "essay") return {
+        type: "essay",
+        q: str(q.q, 2e3, `Pertanyaan ${i + 1}`),
+        points: int(q.points, 1, 100, `Pertanyaan ${i + 1}: poin`, 5),
+        rubric: str(q.rubric ?? q.why, 4e3, `Pertanyaan ${i + 1}: rubrik`)
+      };
       const options = arr(q.options, 6, `Pertanyaan ${i + 1}: pilihan`).map((o, j) => str(o, 400, `Pertanyaan ${i + 1}: pilihan ${String.fromCharCode(65 + j)}`));
       const answer = q.answer === null || q.answer === void 0 || q.answer === "" ? null : Number(q.answer);
       if (answer !== null && (!Number.isInteger(answer) || answer < 0 || answer >= Math.max(options.length, 1))) bad(`Pertanyaan ${i + 1}: jawaban benar tidak valid.`);
-      return { q: str(q.q, 600, `Pertanyaan ${i + 1}`), options, answer, why: str(q.why, 2e3, `Pertanyaan ${i + 1}: pembahasan`) };
+      return { type: "mc", q: str(q.q, 600, `Pertanyaan ${i + 1}`), options, answer, why: str(q.why, 2e3, `Pertanyaan ${i + 1}: pembahasan`), points: int(q.points, 1, 100, `Pertanyaan ${i + 1}: poin`, 1) };
     });
     const course = typeof d.course === "string" && ID_RE.test(d.course) ? d.course : "";
     return { ...base, minutes: int(d.minutes, 1, 300, "Estimasi menit", 5), course, questions };
@@ -23473,6 +23488,7 @@ function forPublish(kind, d) {
     need(d.questions.length, "Quiz butuh minimal 1 pertanyaan sebelum publish.");
     d.questions.forEach((q, i) => {
       need(q.q, `Pertanyaan ${i + 1}: teks pertanyaan wajib diisi.`);
+      if (q.type === "essay") return;
       need(q.options.length >= 2 && q.options.every(Boolean), `Pertanyaan ${i + 1}: isi minimal 2 pilihan dan jangan biarkan pilihan kosong.`);
       need(q.answer !== null && q.answer < q.options.length, `Pertanyaan ${i + 1}: pilih jawaban yang benar.`);
     });
@@ -23528,7 +23544,7 @@ async function buildRaport(db, userId, period, catalog) {
   const u = await sql(db, "SELECT id,name,email,role,status,created_at FROM users WHERE id=?", userId).first() || fail(404, "Peserta tidak ditemukan.");
   const [p, a, r, e] = await Promise.all([
     sql(db, "SELECT course_id,lesson_id,completed_at FROM lesson_progress WHERE user_id=? ORDER BY completed_at", userId).all(),
-    sql(db, "SELECT quiz_id,score,created_at FROM quiz_attempts WHERE user_id=? ORDER BY created_at,attempt_id", userId).all(),
+    sql(db, "SELECT quiz_id,score,status,created_at FROM quiz_attempts WHERE user_id=? ORDER BY created_at,attempt_id", userId).all(),
     sql(db, "SELECT article_id,read_at FROM article_reads WHERE user_id=? ORDER BY read_at", userId).all(),
     sql(db, "SELECT course_id,created_at FROM enrollments WHERE user_id=?", userId).all()
   ]);
@@ -23563,10 +23579,11 @@ async function buildRaport(db, userId, period, catalog) {
   }
   const quizEvents = a.results.filter((x) => inPeriod(x.created_at) && catalog.quizzes.some((q) => q.id === x.quiz_id));
   const quizzes = catalog.quizzes.map((q) => {
-    const rows = quizEvents.filter((x) => x.quiz_id === q.id);
-    if (!rows.length) return null;
-    const best = Math.max(...rows.map((x) => x.score)), last = rows[rows.length - 1];
-    return { id: q.id, title: q.title, category: q.category, best, last: last.score, attempts: rows.length, passed: best >= 80, firstAt: iso2(rows[0].created_at), lastAt: iso2(last.created_at) };
+    const all = quizEvents.filter((x) => x.quiz_id === q.id);
+    if (!all.length) return null;
+    const rows = all.filter((x) => x.status !== "pending"), pending = all.length - rows.length;
+    const best = rows.length ? Math.max(...rows.map((x) => x.score)) : null, last = rows[rows.length - 1];
+    return { id: q.id, title: q.title, category: q.category, best, last: last ? last.score : null, attempts: all.length, pending, passed: best !== null && best >= 80, firstAt: iso2(all[0].created_at), lastAt: iso2(all[all.length - 1].created_at) };
   }).filter(Boolean);
   const articles = r.results.filter((x) => inPeriod(x.read_at)).map((x) => {
     const art = catalog.articles.find((a2) => a2.id === x.article_id);
@@ -23598,7 +23615,7 @@ async function buildRaport(db, userId, period, catalog) {
     const b2 = bucket(ev.created_at);
     if (b2) b2.quizzes++;
   }
-  const bests = quizzes.map((q) => q.best);
+  const bests = quizzes.map((q) => q.best).filter((b2) => b2 !== null);
   return {
     user: { id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, joinedAt: iso2(u.created_at), lastActivity },
     period: { from: period.fromDay, to: period.toDay },
@@ -23609,6 +23626,7 @@ async function buildRaport(db, userId, period, catalog) {
       lessonsCompleted: lessonEvents.length,
       minutes: lessonEvents.reduce((s, x) => s + x.minutes, 0),
       quizzesAttempted: quizzes.length,
+      quizzesPending: quizzes.filter((q) => q.pending && q.best === null).length,
       quizzesPassed: quizzes.filter((q) => q.passed).length,
       avgBest: bests.length ? Math.round(bests.reduce((s, x) => s + x, 0) / bests.length) : null,
       articlesRead: articles.length
@@ -23627,7 +23645,7 @@ var parseJson2 = (v) => typeof v === "string" ? JSON.parse(v) : v;
 function safeCatalog(catalog) {
   return escapeDeep({
     courses: catalog.courses.map(({ version, ...c }) => c),
-    quizzes: catalog.quizzes.map(({ version, ...q }) => ({ ...q, questions: q.questions.map(({ q: q2, options }) => ({ q: q2, options })) })),
+    quizzes: catalog.quizzes.map(({ version, ...q }) => ({ ...q, questions: q.questions.map(({ q: q2, options, type, points }) => ({ q: q2, type: type || "mc", options: type === "essay" ? [] : options, points: points || 1 })) })),
     articles: catalog.articles.map(({ version, ...a }) => ({ ...a, publishedAt: version }))
   });
 }
@@ -23638,7 +23656,7 @@ async function learningState(db, userId, catalog) {
     sql(db, "SELECT course_id FROM enrollments WHERE user_id=? ORDER BY created_at", userId).all(),
     sql(db, "SELECT kind,content_id FROM bookmarks WHERE user_id=? ORDER BY created_at", userId).all(),
     sql(db, "SELECT article_id FROM article_reads WHERE user_id=?", userId).all(),
-    sql(db, "SELECT quiz_id,score,created_at FROM quiz_attempts WHERE user_id=? ORDER BY created_at,attempt_id", userId).all()
+    sql(db, "SELECT quiz_id,score,status,created_at FROM quiz_attempts WHERE user_id=? ORDER BY created_at,attempt_id", userId).all()
   ]);
   const has = (list, id) => list.some((x) => x.id === id);
   const progress = Object.fromEntries(catalog.courses.map((c) => [c.id, []]));
@@ -23652,7 +23670,12 @@ async function learningState(db, userId, catalog) {
     activity.push({ date: dateFormat.format(new Date(row.completed_at)), minutes: c.lessons[index].duration });
   }
   const results = {};
+  const pending = {};
   for (const row of a.results) {
+    if (row.status === "pending") {
+      if (has(catalog.quizzes, row.quiz_id)) pending[row.quiz_id] = (pending[row.quiz_id] || 0) + 1;
+      continue;
+    }
     if (!has(catalog.quizzes, row.quiz_id)) continue;
     const prev = results[row.quiz_id];
     results[row.quiz_id] = { score: Math.max(prev?.score || 0, row.score), lastScore: row.score, attempts: (prev?.attempts || 0) + 1, date: iso3(row.created_at) };
@@ -23665,12 +23688,30 @@ async function learningState(db, userId, catalog) {
     savedArticles: b2.results.filter((x) => x.kind === "article" && has(catalog.articles, x.content_id)).map((x) => x.content_id),
     readArticles: r.results.map((x) => x.article_id).filter((id) => has(catalog.articles, id)),
     results,
+    pending,
     activity
   };
 }
 function attemptResult(record) {
-  const review = parseJson2(record.review);
-  return escapeDeep({ id: record.attempt_id, score: record.score, correct: review.filter((r) => r.correct).length, total: review.length, passed: record.score >= 80, answers: parseJson2(record.answers), review, quizId: record.quiz_id, createdAt: iso3(record.created_at) });
+  const pending = record.status === "pending";
+  const review = parseJson2(record.review).map((r) => r.type === "essay" ? (({ rubric, ...rest }) => pending ? rest : { ...rest, why: rubric || "" })(r) : r);
+  return escapeDeep({
+    id: record.attempt_id,
+    status: record.status || "graded",
+    score: record.score,
+    passed: !pending && record.score >= 80,
+    correct: review.filter((r) => r.type !== "essay" && r.correct).length,
+    total: review.length,
+    mcTotal: review.filter((r) => r.type !== "essay").length,
+    essays: review.filter((r) => r.type === "essay").length,
+    earnedPoints: record.earned_points === null || record.earned_points === void 0 ? null : Number(record.earned_points),
+    maxPoints: record.max_points ?? null,
+    answers: parseJson2(record.answers),
+    review,
+    quizId: record.quiz_id,
+    createdAt: iso3(record.created_at),
+    gradedAt: record.graded_at ? iso3(record.graded_at) : null
+  });
 }
 async function api(request, { db, user, origin }) {
   try {
@@ -23706,12 +23747,34 @@ async function api(request, { db, user, origin }) {
       await bodyJSON(request);
       await sql(db, "INSERT INTO article_reads(user_id,article_id,read_at) VALUES(?,?,?) ON CONFLICT DO NOTHING", user.id, m[1], now).run();
     } else if (method === "POST" && (m = path.match(/^\/api\/quizzes\/([a-z0-9-]+)\/attempts$/))) {
-      const q = find2(catalog.quizzes, m[1], "Quiz tidak ditemukan."), data = await bodyJSON(request);
+      const q = find2(catalog.quizzes, m[1], "Quiz tidak ditemukan."), data = await bodyJSON(request, 256 * 1024);
       if (typeof data.attemptId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.attemptId)) fail(422, "ID percobaan tidak valid.");
-      if (!Array.isArray(data.answers) || data.answers.length !== q.questions.length || data.answers.some((v, i) => !Number.isInteger(v) || v < 0 || v >= q.questions[i].options.length)) fail(422, "Jawab semua pertanyaan dengan pilihan yang valid. Jika quiz baru diperbarui, muat ulang halaman.");
-      const review = q.questions.map((question, i) => ({ q: question.q, options: question.options, selected: data.answers[i], answer: question.answer, correct: data.answers[i] === question.answer, why: question.why }));
-      const score = Math.round(review.filter((x) => x.correct).length / review.length * 100);
-      await sql(db, "INSERT INTO quiz_attempts(user_id,attempt_id,quiz_id,score,answers,review,content_version,created_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING", user.id, data.attemptId, q.id, score, JSON.stringify(data.answers), JSON.stringify(review), q.version, now).run();
+      const validAnswer = (v, question) => question.type === "essay" ? typeof v === "string" && v.trim().length > 0 && v.length <= 5e3 : Number.isInteger(v) && v >= 0 && v < question.options.length;
+      if (!Array.isArray(data.answers) || data.answers.length !== q.questions.length || data.answers.some((v, i) => !validAnswer(v, q.questions[i]))) fail(422, "Jawab semua pertanyaan (essay maksimal 5.000 karakter). Jika quiz baru diperbarui, muat ulang halaman.");
+      const review = q.questions.map((question, i) => {
+        const points = question.points || 1;
+        if (question.type === "essay") return { type: "essay", q: question.q, points, answerText: data.answers[i].trim(), earned: null, feedback: "", rubric: question.rubric || "" };
+        const correct = data.answers[i] === question.answer;
+        return { type: "mc", q: question.q, options: question.options, selected: data.answers[i], answer: question.answer, correct, why: question.why, points, earned: correct ? points : 0 };
+      });
+      const maxPoints = review.reduce((s, r) => s + r.points, 0), mcEarned = review.reduce((s, r) => s + (r.earned || 0), 0);
+      const hasEssay = review.some((r) => r.type === "essay");
+      const score = hasEssay ? null : Math.round(mcEarned / maxPoints * 100);
+      await sql(
+        db,
+        "INSERT INTO quiz_attempts(user_id,attempt_id,quiz_id,score,status,max_points,earned_points,answers,review,content_version,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+        user.id,
+        data.attemptId,
+        q.id,
+        score,
+        hasEssay ? "pending" : "graded",
+        maxPoints,
+        mcEarned,
+        JSON.stringify(data.answers),
+        JSON.stringify(review),
+        q.version,
+        now
+      ).run();
       const record = await sql(db, "SELECT * FROM quiz_attempts WHERE user_id=? AND attempt_id=?", user.id, data.attemptId).first();
       if (record.quiz_id !== q.id || record.answers !== JSON.stringify(data.answers)) fail(409, "ID percobaan telah digunakan untuk jawaban yang berbeda.");
       return json({ result: attemptResult(record), state: await learningState(db, user.id, catalog) });
@@ -23881,7 +23944,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
       const catalog = await publishedCatalogLite(db);
       const [p, a, r] = await Promise.all([
         sql(db, "SELECT course_id,lesson_id FROM lesson_progress WHERE user_id=?", u.id).all(),
-        sql(db, "SELECT quiz_id,max(score) AS best,count(*) AS attempts,max(created_at) AS last FROM quiz_attempts WHERE user_id=? GROUP BY quiz_id", u.id).all(),
+        sql(db, "SELECT quiz_id,max(score) AS best,count(*) AS attempts,max(created_at) AS last FROM quiz_attempts WHERE user_id=? AND status='graded' GROUP BY quiz_id", u.id).all(),
         sql(db, "SELECT count(*) AS n FROM article_reads WHERE user_id=?", u.id).first()
       ]);
       const courses = catalog.filter((c) => c.kind === "course").map((c) => {
@@ -23928,15 +23991,19 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
         conds.push("created_at <= ?");
         args.push(period.to.toISOString());
       }
-      const rows = await sql(db, `SELECT user_id,quiz_id,score,created_at FROM quiz_attempts ${conds.length ? "WHERE " + conds.join(" AND ") : ""} ORDER BY created_at, attempt_id`, ...args).all();
+      const rows = await sql(db, `SELECT user_id,quiz_id,score,status,created_at FROM quiz_attempts ${conds.length ? "WHERE " + conds.join(" AND ") : ""} ORDER BY created_at, attempt_id`, ...args).all();
       const cells = {};
       for (const r of rows.results) {
         if (!ids.has(r.quiz_id)) continue;
-        const u = cells[r.user_id] ||= {}, c = u[r.quiz_id] ||= { best: 0, last: 0, attempts: 0, lastAt: null };
-        c.best = Math.max(c.best, r.score);
-        c.last = r.score;
+        const u = cells[r.user_id] ||= {}, c = u[r.quiz_id] ||= { best: null, last: null, attempts: 0, pending: 0, lastAt: null };
         c.attempts++;
         c.lastAt = iso4(r.created_at);
+        if (r.status === "pending") {
+          c.pending++;
+          continue;
+        }
+        c.best = Math.max(c.best ?? 0, r.score);
+        c.last = r.score;
       }
       const users = (await userList(db)).map(({ id, name, email, role, status: status2 }) => ({ id, name, email, role, status: status2 }));
       return json({ quizzes: catalog.map((q) => ({ id: q.id, title: q.title, category: q.category, questions: q.questions.length })), users, cells, period: { from: period.fromDay, to: period.toDay }, generatedAt: (/* @__PURE__ */ new Date()).toISOString() });
@@ -23946,7 +24013,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
       const [p, e, a] = await Promise.all([
         sql(db, "SELECT user_id,course_id,lesson_id FROM lesson_progress").all(),
         sql(db, "SELECT user_id,course_id FROM enrollments").all(),
-        sql(db, "SELECT user_id,quiz_id,max(score) AS best,count(*) AS attempts FROM quiz_attempts GROUP BY user_id,quiz_id").all()
+        sql(db, "SELECT user_id,quiz_id,max(score) AS best,count(*) AS attempts FROM quiz_attempts WHERE status='graded' GROUP BY user_id,quiz_id").all()
       ]);
       const courses = catalog.filter((c) => c.kind === "course").map((c) => {
         const ids = new Set(c.lessons.map((l) => l.id)), per = /* @__PURE__ */ new Map();
@@ -23962,6 +24029,157 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
         return { id: q.id, title: q.title, takers: rows.length, passed: rows.filter((x) => Number(x.best) >= 80).length, avgBest: rows.length ? Math.round(rows.reduce((s, x) => s + Number(x.best), 0) / rows.length) : null, attempts: rows.reduce((s, x) => s + Number(x.attempts), 0) };
       });
       return json({ courses, quizzes, users: await userList(db), generatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    }
+    const QUIZ_TITLE = "COALESCE(ci.published->>'title', ci.draft->>'title', a.quiz_id)";
+    if (path === "/api/admin/grading/count" && method === "GET") {
+      const r = await sql(db, "SELECT count(*) AS n FROM quiz_attempts WHERE status='pending'").first();
+      return json({ pending: Number(r.n) });
+    }
+    if (path === "/api/admin/grading" && method === "GET") {
+      const graded = url.searchParams.get("status") === "graded";
+      const rows = await sql(db, `SELECT a.user_id,a.attempt_id,a.quiz_id,a.created_at,a.graded_at,a.score,a.status,u.name,u.email,g.name AS grader,${QUIZ_TITLE} AS quiz_title
+        FROM quiz_attempts a JOIN users u ON u.id=a.user_id LEFT JOIN users g ON g.id=a.graded_by LEFT JOIN content_items ci ON ci.kind='quiz' AND ci.id=a.quiz_id
+        WHERE ${graded ? `a.status='graded' AND a.review LIKE '%"type":"essay"%'` : "a.status='pending'"}
+        ORDER BY ${graded ? "a.graded_at DESC NULLS LAST" : "a.created_at ASC"} LIMIT 200`).all();
+      return json({ items: rows.results.map((r) => ({ userId: r.user_id, attemptId: r.attempt_id, quizId: r.quiz_id, quizTitle: r.quiz_title, name: r.name, email: r.email, createdAt: iso4(r.created_at), gradedAt: iso4(r.graded_at), score: r.score, status: r.status, grader: r.grader })) });
+    }
+    if (m = path.match(/^\/api\/admin\/grading\/([0-9a-f-]{36})\/([0-9a-f-]{36})$/)) {
+      const [, uid2, aid] = m;
+      const rec = await sql(db, `SELECT a.*,u.name,u.email,g.name AS grader,${QUIZ_TITLE} AS quiz_title FROM quiz_attempts a JOIN users u ON u.id=a.user_id LEFT JOIN users g ON g.id=a.graded_by LEFT JOIN content_items ci ON ci.kind='quiz' AND ci.id=a.quiz_id WHERE a.user_id=? AND a.attempt_id=?`, uid2, aid).first() || fail(404, "Percobaan quiz tidak ditemukan.");
+      const review = parseJson3(rec.review);
+      if (!review.some((r) => r.type === "essay")) fail(409, "Percobaan ini tidak berisi essay.");
+      if (method === "POST") {
+        const body = await bodyJSON(request, 128 * 1024);
+        if (!Array.isArray(body.grades)) fail(422, "Data nilai tidak valid.");
+        review.forEach((r, i) => {
+          if (r.type !== "essay") return;
+          const g = body.grades.find((x) => x && x.index === i);
+          const earned2 = g ? Number(g.earned) : NaN;
+          if (!Number.isFinite(earned2) || earned2 < 0 || earned2 > r.points || Math.round(earned2 * 2) !== earned2 * 2) fail(422, `Pertanyaan ${i + 1}: isi nilai 0\u2013${r.points} (kelipatan 0,5).`);
+          const feedback = typeof g.feedback === "string" ? g.feedback.trim() : "";
+          if (feedback.length > 2e3) fail(422, `Pertanyaan ${i + 1}: komentar maksimal 2.000 karakter.`);
+          r.earned = earned2;
+          r.feedback = feedback;
+        });
+        const max = review.reduce((s, r) => s + r.points, 0), earned = review.reduce((s, r) => s + (r.earned || 0), 0);
+        const score = Math.round(earned / max * 100);
+        await sql(db, "UPDATE quiz_attempts SET review=?, score=?, status='graded', earned_points=?, max_points=?, graded_at=now(), graded_by=? WHERE user_id=? AND attempt_id=?", JSON.stringify(review), score, earned, max, user.id, uid2, aid).run();
+        return json({ ok: true, score, pending: Number((await sql(db, "SELECT count(*) AS n FROM quiz_attempts WHERE status='pending'").first()).n) });
+      }
+      if (method === "GET") return json({ attempt: {
+        userId: uid2,
+        attemptId: aid,
+        quizId: rec.quiz_id,
+        quizTitle: rec.quiz_title,
+        name: rec.name,
+        email: rec.email,
+        status: rec.status,
+        score: rec.score,
+        earnedPoints: rec.earned_points === null ? null : Number(rec.earned_points),
+        maxPoints: rec.max_points,
+        createdAt: iso4(rec.created_at),
+        gradedAt: iso4(rec.graded_at),
+        grader: rec.grader,
+        review
+      } });
+    }
+    if (path === "/api/admin/export/quizzes" && method === "GET") {
+      const rows = await sql(db, "SELECT id,draft,published_at FROM content_items WHERE kind='quiz' ORDER BY sort_order, created_at, id").all();
+      return json({ quizzes: rows.results.map((r) => ({ id: r.id, published: Boolean(r.published_at), ...parseJson3(r.draft) })) });
+    }
+    if (path === "/api/admin/import/quizzes" && method === "POST") {
+      const body = await bodyJSON(request, 4 * 1024 * 1024);
+      if (!Array.isArray(body.quizzes) || !body.quizzes.length) fail(422, "File tidak berisi quiz.");
+      if (body.quizzes.length > 100) fail(422, "Maksimal 100 quiz per file.");
+      const errors = [], items = [], plans = [];
+      const courses = new Set((await sql(db, "SELECT id FROM content_items WHERE kind='course'").all()).results.map((r) => r.id));
+      for (const qz of body.quizzes) {
+        const where = qz.row ? `Baris ${qz.row}` : `Quiz "${qz.title || qz.id}"`;
+        let existing = null;
+        if (qz.id) {
+          existing = await sql(db, "SELECT id,draft,published_at,revision FROM content_items WHERE kind='quiz' AND id=?", String(qz.id)).first();
+          if (!existing) {
+            errors.push({ row: qz.row, message: `${where}: quiz_id "${qz.id}" tidak ditemukan. Kosongkan quiz_id untuk membuat quiz baru.` });
+            continue;
+          }
+        }
+        const base = existing ? parseJson3(existing.draft) : { title: "", category: "", description: "", minutes: 5, color: "peach", course: "", questions: [] };
+        const pick2 = (v, fallback) => v === void 0 || v === null || String(v).trim() === "" ? fallback : v;
+        const draftIn = { ...base, title: pick2(qz.title, base.title), category: pick2(qz.category, base.category), description: pick2(qz.description, base.description), minutes: pick2(qz.minutes, base.minutes), course: pick2(qz.course, base.course) };
+        if (!draftIn.title) {
+          errors.push({ row: qz.row, message: `${where}: judul_quiz wajib diisi untuk quiz baru.` });
+          continue;
+        }
+        if (draftIn.course && !courses.has(String(draftIn.course))) errors.push({ row: qz.row, message: `${where}: course_id "${draftIn.course}" tidak ditemukan.` });
+        if (!Array.isArray(qz.questions) || !qz.questions.length) {
+          errors.push({ row: qz.row, message: `${where}: quiz "${draftIn.title}" tidak punya pertanyaan.` });
+          continue;
+        }
+        draftIn.questions = [];
+        for (const q of qz.questions) {
+          const at = `Baris ${q.row ?? "?"}`;
+          const type = String(q.type || "pg").trim().toLowerCase();
+          if (!["pg", "pilihan ganda", "mc", "essay", "esai"].includes(type)) {
+            errors.push({ row: q.row, message: `${at}: tipe harus PG atau Essay.` });
+            continue;
+          }
+          const text = String(q.q ?? "").trim();
+          if (!text) {
+            errors.push({ row: q.row, message: `${at}: pertanyaan kosong.` });
+            continue;
+          }
+          const points = pick2(q.points, void 0);
+          if (points !== void 0 && !(Number.isInteger(Number(points)) && Number(points) >= 1 && Number(points) <= 100)) {
+            errors.push({ row: q.row, message: `${at}: poin harus angka bulat 1\u2013100.` });
+            continue;
+          }
+          if (type === "essay" || type === "esai") {
+            draftIn.questions.push({ type: "essay", q: text, points, rubric: String(q.explanation ?? "") });
+            continue;
+          }
+          const options = (Array.isArray(q.options) ? q.options : []).map((o) => String(o ?? "").trim());
+          while (options.length && !options[options.length - 1]) options.pop();
+          if (options.length < 2 || options.some((o) => !o)) {
+            errors.push({ row: q.row, message: `${at}: isi minimal 2 pilihan berurutan (A, B, \u2026) tanpa yang kosong di tengah.` });
+            continue;
+          }
+          const letter = String(q.answer ?? "").trim().toUpperCase();
+          const answer = /^[A-F]$/.test(letter) ? letter.charCodeAt(0) - 65 : /^[1-6]$/.test(letter) ? Number(letter) - 1 : -1;
+          if (answer < 0 || answer >= options.length) {
+            errors.push({ row: q.row, message: `${at}: jawaban_benar harus huruf A\u2013${String.fromCharCode(64 + options.length)}.` });
+            continue;
+          }
+          draftIn.questions.push({ type: "mc", q: text, options, answer, why: String(q.explanation ?? ""), points });
+        }
+        let draft;
+        try {
+          draft = normalize("quiz", draftIn, ctx);
+        } catch (e) {
+          errors.push({ row: qz.row, message: `${where}: ${e.message}` });
+          continue;
+        }
+        let warning = "";
+        try {
+          forPublish("quiz", structuredClone(draft));
+        } catch (e) {
+          warning = e.message;
+        }
+        items.push({ id: existing?.id || null, title: draft.title, action: existing ? "update" : "create", questions: draft.questions.length, essays: draft.questions.filter((q) => q.type === "essay").length, published: Boolean(existing?.published_at), warning });
+        plans.push({ existing, draft });
+      }
+      const summary2 = { create: items.filter((i) => i.action === "create").length, update: items.filter((i) => i.action === "update").length, questions: items.reduce((s, i) => s + i.questions, 0) };
+      if (errors.length || body.dryRun) return json({ dryRun: true, ok: !errors.length, errors, items, summary: summary2 });
+      for (const { existing, draft } of plans) {
+        if (existing) await sql(db, "UPDATE content_items SET draft=?::jsonb, revision=revision+1, updated_at=now(), updated_by=? WHERE kind='quiz' AND id=?", JSON.stringify(draft), user.id, existing.id).run();
+        else {
+          const base = slugify(draft.title);
+          let id = base;
+          for (let n = 2; await sql(db, "SELECT 1 AS x FROM content_items WHERE kind='quiz' AND id=?", id).first(); n++) id = `${base.slice(0, 54)}-${n}`;
+          const order = await sql(db, "SELECT COALESCE(max(sort_order),0)+10 AS n FROM content_items WHERE kind='quiz'").first();
+          await sql(db, "INSERT INTO content_items(kind,id,draft,sort_order,updated_by) VALUES('quiz',?,?::jsonb,?,?)", id, JSON.stringify(draft), Number(order.n), user.id).run();
+        }
+      }
+      return json({ dryRun: false, ok: true, errors: [], items, summary: summary2 });
     }
     fail(404, "Endpoint admin tidak ditemukan.");
   } catch (error) {

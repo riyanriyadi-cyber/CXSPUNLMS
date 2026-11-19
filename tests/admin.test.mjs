@@ -98,6 +98,15 @@ test('Admin panel API', async t => {
     await call(`/api/admin/content/course/${course.id}/publish`, {token: adm, body: {}});
   });
 
+  await t.test('rich text: only youtube-nocookie embeds survive', async () => {
+    const draft = structuredClone(course.draft);
+    draft.lessons[0].sections = [{heading: 'Video', html: '<p>a</p><div data-youtube-video=""><iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?start=5" onload="x()"></iframe></div><iframe src="https://evil.example/x"></iframe><iframe srcdoc="<b>x</b>"></iframe>'}];
+    const out = (await call(`/api/admin/content/course/${course.id}`, {token: adm, body: {draft}})).data.item.draft.lessons[0].sections[0].html;
+    assert.equal((out.match(/<iframe/g) || []).length, 1);
+    assert.ok(out.includes('src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?start=5"') && out.includes('data-youtube-video') && !out.includes('onload') && !out.includes('evil') && !out.includes('srcdoc'));
+    course = (await call(`/api/admin/content/course/${course.id}`, {token: adm, body: {draft: course.draft}})).data.item;
+  });
+
   await t.test('legacy plain-text sections are converted, not lost', async () => {
     const cx = (await call('/api/admin/content/course/cx', {token: adm})).data.item;
     assert.match(cx.draft.lessons[0].sections[0].html, /^<p>.+<\/p>$/);
@@ -230,6 +239,89 @@ test('Admin panel API', async t => {
     assert.deepEqual(past.data.cells, {}); assert.deepEqual(past.data.period, {from: '2020-01-01', to: '2020-12-31'});
     assert.equal((await call('/api/admin/scores', {token: lrn})).status, 403);
     assert.equal((await call('/api/admin/scores?to=2026-99-01', {token: adm})).status, 422);
+  });
+  await t.test('essay quiz: pending until graded, rubric hidden, points-weighted score, everywhere consistent', async () => {
+    const created = (await call('/api/admin/content/quiz', {token: adm, body: {draft: {title: 'Quiz Essay Visa', category: 'Visa', description: 'Campuran', course: course.id, questions: [
+      {type: 'mc', q: 'Coverage minimal?', options: ['EUR 10.000', 'EUR 30.000'], answer: 1, why: 'Aturan', points: 2},
+      {type: 'essay', q: 'Jelaskan cara menangani tamu yang dokumennya kurang.', points: 8, rubric: 'RAHASIA-RUBRIK: empati + solusi'}
+    ]}}})).data.item;
+    assert.equal((await call(`/api/admin/content/quiz/${created.id}/publish`, {token: adm, body: {}})).status, 200);
+    const pub = (await call('/api/catalog', {token: lrn})).data.quizzes.find(q => q.id === created.id);
+    assert.deepEqual(pub.questions.map(q => [q.type, q.points, q.options.length]), [['mc', 2, 2], ['essay', 8, 0]]);
+    assert.ok(!JSON.stringify(pub).includes('RAHASIA'));
+    // jawaban essay wajib diisi
+    assert.equal((await call(`/api/quizzes/${created.id}/attempts`, {token: lrn, body: {attemptId: randomUUID(), answers: [1, '  ']}})).status, 422);
+    const attemptId = randomUUID();
+    const sub = await call(`/api/quizzes/${created.id}/attempts`, {token: lrn, body: {attemptId, answers: [1, 'Saya akan berempati lalu memberi daftar dokumen.']}});
+    assert.equal(sub.status, 200);
+    assert.equal(sub.data.result.status, 'pending'); assert.equal(sub.data.result.score, null); assert.equal(sub.data.result.earnedPoints, 2); assert.equal(sub.data.result.maxPoints, 10);
+    assert.ok(!JSON.stringify(sub.data).includes('RAHASIA'));
+    assert.equal(sub.data.state.pending[created.id], 1); assert.equal(sub.data.state.results[created.id], undefined);
+    // admin: antrean & badge
+    assert.equal((await call('/api/admin/grading/count', {token: adm})).data.pending, 1);
+    const list = (await call('/api/admin/grading', {token: adm})).data.items;
+    assert.equal(list.length, 1); assert.equal(list[0].quizTitle, 'Quiz Essay Visa'); assert.equal(list[0].name, 'Tri Learner');
+    const detail = (await call(`/api/admin/grading/${L.id}/${attemptId}`, {token: adm})).data.attempt;
+    assert.equal(detail.review[1].rubric, 'RAHASIA-RUBRIK: empati + solusi'); assert.equal(detail.review[1].answerText, 'Saya akan berempati lalu memberi daftar dokumen.');
+    // nilai pending tidak masuk matriks/raport sebagai skor
+    let cell = (await call('/api/admin/scores', {token: adm})).data.cells[L.id][created.id];
+    assert.deepEqual([cell.best, cell.pending, cell.attempts], [null, 1, 1]);
+    const rp = (await call('/api/me/raport', {token: lrn})).data.quizzes.find(q => q.id === created.id);
+    assert.deepEqual([rp.best, rp.pending, rp.passed], [null, 1, false]);
+    // validasi nilai
+    assert.equal((await call(`/api/admin/grading/${L.id}/${attemptId}`, {token: adm, body: {grades: [{index: 1, earned: 9}]}})).status, 422);
+    assert.equal((await call(`/api/admin/grading/${L.id}/${attemptId}`, {token: adm, body: {grades: [{index: 1, earned: 2.3}]}})).status, 422);
+    assert.equal((await call(`/api/admin/grading/${L.id}/${attemptId}`, {token: lrn, body: {grades: [{index: 1, earned: 8}]}})).status, 403);
+    const g = await call(`/api/admin/grading/${L.id}/${attemptId}`, {token: adm, body: {grades: [{index: 1, earned: 6.5, feedback: 'Bagus, tambahkan opsi alternatif.'}]}});
+    assert.equal(g.status, 200); assert.equal(g.data.score, 85); assert.equal(g.data.pending, 0); // (2 + 6,5) / 10
+    // peserta melihat hasil akhir + rubrik sebagai pembahasan + komentar
+    const hist = (await call(`/api/quizzes/${created.id}/attempts`, {token: lrn})).data.attempts[0];
+    assert.equal(hist.status, 'graded'); assert.equal(hist.score, 85); assert.equal(hist.passed, true);
+    assert.equal(hist.review[1].why, 'RAHASIA-RUBRIK: empati + solusi'); assert.equal(hist.review[1].feedback, 'Bagus, tambahkan opsi alternatif.'); assert.equal(hist.review[1].earned, 6.5);
+    const me = (await call('/api/me', {token: lrn})).data.state;
+    assert.equal(me.results[created.id].score, 85); assert.equal(me.pending[created.id], undefined);
+    cell = (await call('/api/admin/scores', {token: adm})).data.cells[L.id][created.id];
+    assert.deepEqual([cell.best, cell.pending], [85, 0]);
+    assert.equal((await call('/api/admin/grading?status=graded', {token: adm})).data.items[0].grader, 'Nia Admin');
+    // MC-only quiz tetap langsung dinilai dengan poin
+    const r = (await call('/api/admin/report', {token: adm})).data.quizzes.find(q => q.id === created.id);
+    assert.equal(r.passed, 1);
+  });
+
+  await t.test('import quizzes from spreadsheet rows: dry run, row errors, create & replace as draft', async () => {
+    const bad = await call('/api/admin/import/quizzes', {token: adm, body: {dryRun: true, quizzes: [
+      {row: 2, title: 'Impor A', category: 'Visa', questions: [
+        {row: 2, type: 'PG', q: 'Soal 1', options: ['a', 'b'], answer: 'C', explanation: ''},
+        {row: 3, type: 'Esai', q: '', points: 5},
+        {row: 4, type: 'Kuis', q: 'x'}
+      ]},
+      {row: 5, id: 'tidak-ada', questions: [{row: 5, type: 'PG', q: 'x', options: ['a', 'b'], answer: 'A'}]}
+    ]}});
+    assert.equal(bad.data.ok, false);
+    assert.deepEqual(bad.data.errors.map(e => e.row), [2, 3, 4, 5]);
+    assert.match(bad.data.errors[0].message, /jawaban_benar harus huruf A–B/);
+    const existing = (await call('/api/admin/export/quizzes', {token: adm})).data.quizzes.find(q => q.id === 'cx-quiz');
+    assert.equal(existing.questions.length, 5);
+    const good = {quizzes: [
+      {row: 2, title: 'Impor Baru', category: 'Visa', description: 'Dari Excel', questions: [
+        {row: 2, type: 'PG', q: 'Ibu kota Jepang?', options: ['Osaka', 'Tokyo', '', ''], answer: 'b', explanation: 'Tokyo', points: 2},
+        {row: 3, type: 'Essay', q: 'Jelaskan proses visa Jepang.', explanation: 'Rubrik: dokumen, alur', points: 10}
+      ]},
+      {row: 4, id: 'cx-quiz', title: '', questions: [{row: 4, type: 'PG', q: 'Satu soal pengganti', options: ['Ya', 'Tidak'], answer: 'A'}]}
+    ]};
+    const dry = await call('/api/admin/import/quizzes', {token: adm, body: {...good, dryRun: true}});
+    assert.equal(dry.data.ok, true); assert.deepEqual(dry.data.summary, {create: 1, update: 1, questions: 3});
+    assert.equal(dry.data.items.find(i => i.id === 'cx-quiz').published, true);
+    assert.equal((await call('/api/admin/content/quiz/cx-quiz', {token: adm})).data.item.draft.questions.length, 5); // dry run tidak menyimpan
+    const done = await call('/api/admin/import/quizzes', {token: adm, body: {...good, dryRun: false}});
+    assert.equal(done.data.ok, true);
+    const cx = (await call('/api/admin/content/quiz/cx-quiz', {token: adm})).data.item;
+    assert.equal(cx.draft.questions.length, 1); assert.equal(cx.status, 'changed'); assert.equal(cx.draft.title, 'Customer Experience Fundamentals');
+    assert.equal((await call('/api/catalog', {token: lrn})).data.quizzes.find(q => q.id === 'cx-quiz').questions.length, 5); // peserta belum terpengaruh
+    const neu = (await call('/api/admin/export/quizzes', {token: adm})).data.quizzes.find(q => q.title === 'Impor Baru');
+    assert.deepEqual(neu.questions.map(q => [q.type, q.points]), [['mc', 2], ['essay', 10]]);
+    assert.equal(neu.questions[0].answer, 1); assert.equal(neu.questions[1].rubric, 'Rubrik: dokumen, alur'); assert.equal(neu.published, false);
+    assert.equal((await call('/api/admin/import/quizzes', {token: lrn, body: good})).status, 403);
   });
   await pg.close();
 });
