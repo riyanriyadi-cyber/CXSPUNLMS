@@ -25,7 +25,7 @@
   const LEVELS = [['Fundamental', 'Fundamental'], ['Intermediate', 'Intermediate'], ['Advanced', 'Advanced']];
   const STATUS = {draft: ['Draft', 'st-draft'], published: ['Tayang', 'st-live'], changed: ['Tayang · ada perubahan', 'st-changed']};
   const USTATUS = {active: ['Aktif', 'st-live'], invited: ['Menunggu aktivasi', 'st-changed'], disabled: ['Nonaktif', 'st-off']};
-  const NAV = [['content/course', 'Course'], ['content/quiz', 'Quiz'], ['content/article', 'Artikel'], ['users', 'Peserta'], ['report', 'Laporan']];
+  const NAV = [['content/course', 'Course'], ['content/quiz', 'Quiz'], ['content/article', 'Artikel'], ['users', 'Peserta'], ['scores', 'Nilai Quiz'], ['report', 'Laporan']];
 
   let items = [];          // ringkasan konten
   let editor = null;       // {kind,id,draft,revision,status,dirty,error,publishedAt}
@@ -114,6 +114,7 @@
       if (page === 'edit' && KIND[a] && b) {nav('content/' + a); await openEditor(a, b);}
       else if (page === 'users') {editor = null; nav('users'); await renderUsers();}
       else if (page === 'raport' && a) {editor = null; nav('users'); await renderAdminRaport(a);}
+      else if (page === 'scores') {editor = null; nav('scores'); await (a ? renderQuizScores(decodeURIComponent(a)) : renderScores());}
       else if (page === 'report') {editor = null; nav('report'); await renderReport();}
       else {editor = null; const k = KIND[a] ? a : 'course'; nav('content/' + k); await renderList(k);}
     } catch (e) {main.innerHTML = `<div class="admin-denied"><h1>Belum dapat memuat.</h1><p>${esc(e.message)}</p><button class="btn btn-orange" data-act="reload">Coba lagi</button></div>`;}
@@ -377,6 +378,124 @@
   });
   main.addEventListener('click', e => {if (e.target.closest('[data-raport="print"]')) window.print();});
 
+  // ---------- nilai quiz ----------
+  let scores = null, scoresKey = null;
+  const sf = {preset: 'all', custom: {}, category: '', status: 'not-disabled', q: '', admins: false, sort: {key: 'name', dir: 1}, qsort: {key: 'best', dir: -1}};
+  const CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>';
+  async function loadScores(force = false) {
+    const R = window.HubRaport, r = R.range(sf.preset, sf.custom);
+    if (sf.preset === 'custom' && (!r.from || !r.to)) return null;
+    const key = R.query(r);
+    if (force || key !== scoresKey || !scores) {scores = await api.get('/api/admin/scores' + key); scoresKey = key;}
+    return scores;
+  }
+  const visibleUsers = d => d.users.filter(u => (sf.admins || u.role !== 'admin')
+    && (sf.status === 'all' || (sf.status === 'disabled' ? u.status === 'disabled' : u.status !== 'disabled'))
+    && `${u.name} ${u.email}`.toLowerCase().includes(sf.q.trim().toLowerCase()));
+  const visibleQuizzes = d => d.quizzes.filter(q => !sf.category || q.category === sf.category);
+  const cellOf = (d, uid, qid) => d.cells[uid]?.[qid] || null;
+  const userStats = (d, u, qs) => {const v = qs.map(q => cellOf(d, u.id, q.id)).filter(Boolean); return {done: v.length, passed: v.filter(c => c.best >= 80).length, avg: v.length ? Math.round(v.reduce((s, c) => s + c.best, 0) / v.length) : null};};
+  const quizStats = (d, q, us) => {const v = us.map(u => cellOf(d, u.id, q.id)).filter(Boolean); return {done: v.length, passed: v.filter(c => c.best >= 80).length, avg: v.length ? Math.round(v.reduce((s, c) => s + c.best, 0) / v.length) : null, attempts: v.reduce((s, c) => s + c.attempts, 0)};};
+  const cmp = (a, b, dir) => (a === null || a === undefined) ? 1 : (b === null || b === undefined) ? -1 : (typeof a === 'string' ? a.localeCompare(b, 'id') : a - b) * dir;
+  const sortHead = (label, key, state, cls = '') => {const on = state.key === key; return `<th class="${cls}" aria-sort="${on ? (state.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" class="sort-btn" data-act="score-sort" data-key="${esc(key)}">${label}<span aria-hidden="true">${on ? (state.dir > 0 ? '▲' : '▼') : '↕'}</span></button></th>`;};
+  function scoreFilters(withCategory) {
+    const R = window.HubRaport, cats = [...new Set((scores?.quizzes || []).map(q => q.category).filter(Boolean))];
+    return `<div class="score-filters">
+      <label>Periode<select data-sf="preset">${R.PRESETS.map(([v, l]) => `<option value="${v}" ${sf.preset === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <span class="raport-custom" ${sf.preset === 'custom' ? '' : 'hidden'}><label>Dari<input type="date" data-sf="from" value="${esc(sf.custom.from || '')}" /></label><label>Sampai<input type="date" data-sf="to" value="${esc(sf.custom.to || '')}" /></label></span>
+      ${withCategory ? `<label>Kategori quiz<select data-sf="category"><option value="">Semua kategori</option>${cats.map(c => `<option value="${esc(c)}" ${sf.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>` : ''}
+      <label>Status akun<select data-sf="status"><option value="not-disabled" ${sf.status === 'not-disabled' ? 'selected' : ''}>Aktif & menunggu aktivasi</option><option value="all" ${sf.status === 'all' ? 'selected' : ''}>Semua</option><option value="disabled" ${sf.status === 'disabled' ? 'selected' : ''}>Nonaktif saja</option></select></label>
+      <label class="grow">Cari peserta<input type="search" data-sf="q" value="${esc(sf.q)}" placeholder="Nama atau email…" /></label>
+      <label class="inline-check"><input type="checkbox" data-sf="admins" ${sf.admins ? 'checked' : ''} /> Tampilkan admin</label>
+    </div>`;
+  }
+  async function renderScores() {
+    main.innerHTML = `<div class="content-fade">${heading('Pantau hasil quiz', 'Nilai Quiz', 'Skor terbaik setiap peserta di setiap quiz. Klik judul quiz untuk detail, klik skor untuk membuka raport peserta.', '<button class="btn btn-outline" data-act="scores-csv">Unduh CSV</button>')}<div id="score-filters"></div><div id="score-body"><div class="raport-empty">Memuat nilai…</div></div></div>`;
+    const d = await loadScores(true);
+    $('#score-filters').innerHTML = scoreFilters(true);
+    renderScoreBody();
+    if (!d) $('#score-body').innerHTML = '<div class="raport-empty">Pilih tanggal awal dan akhir.</div>';
+  }
+  function matrixUsers(d, qs) {
+    const us = visibleUsers(d), k = sf.sort.key;
+    const val = u => k === 'name' ? u.name : k === 'passed' ? userStats(d, u, qs).passed : k === 'avg' ? userStats(d, u, qs).avg : cellOf(d, u.id, k.slice(2))?.best ?? null;
+    return us.sort((a, b) => cmp(val(a), val(b), sf.sort.dir) || a.name.localeCompare(b.name, 'id'));
+  }
+  function renderScoreBody() {
+    const body = $('#score-body'); if (!body || !scores) return;
+    if (location.hash.startsWith('#scores/')) return renderQuizScoreBody();
+    const d = scores, qs = visibleQuizzes(d), us = matrixUsers(d, qs);
+    if (!qs.length) {body.innerHTML = '<div class="raport-empty">Belum ada quiz yang tayang di kategori ini.</div>'; return;}
+    const cellHtml = (u, q) => {
+      const c = cellOf(d, u.id, q.id);
+      if (!c) return '<td class="sc-cell"><span class="sc sc-none" title="Belum mengerjakan">—</span></td>';
+      const pass = c.best >= 80, tip = `${u.name} · ${q.title}: terbaik ${c.best}, terakhir ${c.last}, ${c.attempts} percobaan, ${fmtDate(c.lastAt)}${pass ? ' · Lulus' : ' · Belum lulus'}`;
+      return `<td class="sc-cell"><a class="sc ${pass ? 'sc-pass' : 'sc-fail'}" href="#raport/${u.id}" title="${esc(tip)}" aria-label="${esc(tip)}">${c.best}${pass ? CHECK : ''}</a>${c.attempts > 1 ? `<small class="sc-tries">${c.attempts}×</small>` : ''}</td>`;
+    };
+    body.innerHTML = `<p class="score-meta">${us.length} peserta · ${qs.length} quiz · skor terbaik, lulus ≥ 80 (✓) · angka kecil = jumlah percobaan</p>
+      ${us.length ? `<div class="score-wrap"><table class="score-matrix"><thead><tr>${sortHead('Peserta', 'name', sf.sort, 'sm-user')}
+        ${qs.map(q => {const on = sf.sort.key === 'q:' + q.id; return `<th class="sm-q" aria-sort="${on ? (sf.sort.dir > 0 ? 'ascending' : 'descending') : 'none'}"><a href="#scores/${esc(q.id)}" title="Detail: ${esc(q.title)}">${esc(q.title)}</a><button type="button" class="sort-btn mini-sort" data-act="score-sort" data-key="q:${esc(q.id)}" aria-label="Urutkan menurut ${esc(q.title)}">${on ? (sf.sort.dir > 0 ? '▲' : '▼') : '↕'}</button></th>`;}).join('')}
+        ${sortHead('Lulus', 'passed', sf.sort, 'sm-num')}${sortHead('Rata-rata', 'avg', sf.sort, 'sm-num')}</tr></thead>
+        <tbody>${us.map(u => {const st = userStats(d, u, qs); return `<tr><th scope="row" class="sm-user"><a href="#raport/${u.id}">${esc(u.name)}</a><small>${esc(u.email)}${u.role === 'admin' ? ' · Admin' : ''}${u.status === 'disabled' ? ' · Nonaktif' : u.status === 'invited' ? ' · Belum aktivasi' : ''}</small></th>${qs.map(q => cellHtml(u, q)).join('')}<td class="sm-num"><b>${st.passed}</b>/${qs.length}</td><td class="sm-num">${st.avg ?? '—'}</td></tr>`;}).join('')}</tbody>
+        <tfoot><tr><th scope="row" class="sm-user">Ringkasan quiz</th>${qs.map(q => {const s = quizStats(d, q, us); return `<td class="sm-foot"><b>${s.done}</b>/${us.length} mengerjakan<br>${s.passed} lulus · rata-rata ${s.avg ?? '—'}</td>`;}).join('')}<td></td><td></td></tr></tfoot></table></div>` : '<div class="raport-empty">Tidak ada peserta yang cocok dengan filter.</div>'}`;
+  }
+  async function renderQuizScores(qid) {
+    main.innerHTML = `<div class="content-fade"><a class="back-link" href="#scores">← Nilai Quiz</a><div id="qs-head"></div><div id="score-filters"></div><div id="score-body"><div class="raport-empty">Memuat nilai…</div></div></div>`;
+    const d = await loadScores(true);
+    $('#score-filters').innerHTML = scoreFilters(false);
+    if (!d) {$('#score-body').innerHTML = '<div class="raport-empty">Pilih tanggal awal dan akhir.</div>'; return;}
+    renderQuizScoreBody();
+  }
+  function quizRows(d, q) {
+    const us = visibleUsers(d), k = sf.qsort.key;
+    const val = u => {const c = cellOf(d, u.id, q.id); return k === 'name' ? u.name : !c ? null : k === 'status' ? (c.best >= 80 ? 1 : 0) : k === 'lastAt' ? new Date(c.lastAt).getTime() : c[k];};
+    return us.sort((a, b) => cmp(val(a), val(b), sf.qsort.dir) || a.name.localeCompare(b.name, 'id'));
+  }
+  function renderQuizScoreBody() {
+    const d = scores, qid = decodeURIComponent(location.hash.split('/')[1] || ''), q = d.quizzes.find(x => x.id === qid);
+    if (!q) {$('#score-body').innerHTML = '<div class="raport-empty">Quiz tidak ditemukan atau sudah tidak tayang.</div>'; $('#qs-head').innerHTML = ''; return;}
+    const us = visibleUsers(d), st = quizStats(d, q, us), rows = quizRows(d, q);
+    $('#breadcrumb').textContent = 'Admin · Nilai Quiz';
+    $('#qs-head').innerHTML = heading(esc(q.category || 'Quiz'), esc(q.title), `${q.questions} pertanyaan · lulus ≥ 80`, '<button class="btn btn-outline" data-act="scores-csv">Unduh CSV</button>');
+    const chip = c => !c ? '<span class="st st-draft">Belum mengerjakan</span>' : c.best >= 80 ? `<span class="st st-live sc-status">${CHECK}Lulus</span>` : '<span class="st st-changed">Belum lulus</span>';
+    $('#score-body').innerHTML = `<section class="stats-grid score-stats">${[['Sudah mengerjakan', `${st.done}<em>/${us.length}</em>`], ['Lulus', st.passed], ['Rata-rata skor terbaik', st.avg ?? '—'], ['Total percobaan', st.attempts]].map(([l, v]) => `<div class="stat-card"><div><div class="stat-label">${l}</div><div class="stat-value">${v}</div></div></div>`).join('')}</section>
+      ${rows.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr>${sortHead('Peserta', 'name', sf.qsort)}${sortHead('Skor terbaik', 'best', sf.qsort)}${sortHead('Skor terakhir', 'last', sf.qsort)}${sortHead('Percobaan', 'attempts', sf.qsort)}${sortHead('Status', 'status', sf.qsort)}${sortHead('Terakhir dikerjakan', 'lastAt', sf.qsort)}<th class="col-actions">Raport</th></tr></thead><tbody>
+      ${rows.map(u => {const c = cellOf(d, u.id, q.id); return `<tr><td><span class="row-title">${esc(u.name)}</span><small>${esc(u.email)}${u.role === 'admin' ? ' · Admin' : ''}${u.status === 'disabled' ? ' · Nonaktif' : ''}</small></td><td><b>${c ? c.best : '—'}</b></td><td>${c ? c.last : '—'}</td><td>${c ? c.attempts : 0}</td><td>${chip(c)}</td><td><span class="when">${c ? fmtDate(c.lastAt) : '—'}</span></td><td class="col-actions"><a class="btn btn-outline" href="#raport/${u.id}">Raport</a></td></tr>`;}).join('')}</tbody></table></div>` : '<div class="raport-empty">Tidak ada peserta yang cocok dengan filter.</div>'}`;
+  }
+  async function onScoreFilter(el) {
+    const k = el.dataset.sf;
+    if (k === 'preset') {sf.preset = el.value; $('#score-filters .raport-custom').hidden = sf.preset !== 'custom';}
+    else if (k === 'from' || k === 'to') sf.custom[k] = el.value;
+    else if (k === 'admins') sf.admins = el.checked;
+    else sf[k] = el.value;
+    if (['preset', 'from', 'to'].includes(k)) {
+      $('#score-body').innerHTML = '<div class="raport-empty">Memuat nilai…</div>';
+      try {const d = await loadScores(); if (!d) {$('#score-body').innerHTML = '<div class="raport-empty">Pilih tanggal awal dan akhir.</div>'; return;}}
+      catch (e) {$('#score-body').innerHTML = `<div class="raport-empty">${esc(e.message)}</div>`; return;}
+    }
+    renderScoreBody();
+  }
+  main.addEventListener('input', e => {if (e.target.dataset?.sf === 'q') onScoreFilter(e.target);});
+  main.addEventListener('change', e => {const k = e.target.dataset?.sf; if (k && k !== 'q') onScoreFilter(e.target);});
+  function saveCsv(rows, name) {
+    const cell = v => {const s = String(v ?? ''); return /[",\n;]/.test(s) || /^[=+\-@]/.test(s) ? `"${(/^[=+\-@]/.test(s) ? "'" : '') + s.replace(/"/g, '""')}"` : s;};
+    const blob = new Blob(['\ufeff' + rows.map(r => r.map(cell).join(',')).join('\r\n')], {type: 'text/csv;charset=utf-8'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  function scoresCsv() {
+    const d = scores; if (!d) return;
+    const day = new Date().toISOString().slice(0, 10), status = u => USTATUS[u.status][0];
+    if (location.hash.startsWith('#scores/')) {
+      const q = d.quizzes.find(x => x.id === decodeURIComponent(location.hash.split('/')[1])); if (!q) return;
+      saveCsv([['Nama', 'Email', 'Status akun', 'Skor terbaik', 'Skor terakhir', 'Percobaan', 'Status quiz', 'Terakhir dikerjakan'],
+        ...quizRows(d, q).map(u => {const c = cellOf(d, u.id, q.id); return [u.name, u.email, status(u), c?.best ?? '', c?.last ?? '', c?.attempts ?? 0, !c ? 'Belum mengerjakan' : c.best >= 80 ? 'Lulus' : 'Belum lulus', c ? fmtDate(c.lastAt) : ''];})], `nilai-${q.id}-${day}.csv`);
+    } else {
+      const qs = visibleQuizzes(d);
+      saveCsv([['Nama', 'Email', 'Status akun', ...qs.map(q => q.title), 'Quiz lulus', 'Rata-rata skor terbaik'],
+        ...matrixUsers(d, qs).map(u => {const st = userStats(d, u, qs); return [u.name, u.email, status(u), ...qs.map(q => cellOf(d, u.id, q.id)?.best ?? ''), `${st.passed}/${qs.length}`, st.avg ?? ''];})], `nilai-quiz-${day}.csv`);
+    }
+  }
+
   // ---------- laporan ----------
   let report = null;
   async function renderReport() {
@@ -476,6 +595,12 @@
         }
         case 'resend': b.disabled = true; users = (await api.post(`/api/admin/users/${b.dataset.id}/resend`, {})).users; renderUserRows(); toast('Undangan dikirim ulang.'); break;
         case 'csv': downloadCsv(); break;
+        case 'scores-csv': scoresCsv(); break;
+        case 'score-sort': {
+          const st = location.hash.startsWith('#scores/') ? sf.qsort : sf.sort, k = b.dataset.key;
+          if (st.key === k) st.dir *= -1; else {st.key = k; st.dir = k === 'name' ? 1 : -1;}
+          renderScoreBody(); break;
+        }
       }
     } catch (err) {toast(err.message || 'Aksi gagal. Coba lagi.', true); if (b.isConnected) b.disabled = false;}
   });

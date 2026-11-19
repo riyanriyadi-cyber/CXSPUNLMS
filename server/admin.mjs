@@ -186,6 +186,25 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
       return json({ok: true, users: await userList(db)});
     }
 
+    // ---------- Nilai quiz (matriks peserta × quiz) ----------
+    if (path === '/api/admin/scores' && method === 'GET') {
+      const period = parsePeriod(url);
+      const catalog = (await publishedCatalogLite(db)).filter(x => x.kind === 'quiz');
+      const ids = new Set(catalog.map(q => q.id));
+      const conds = [], args = [];
+      if (period.from) {conds.push('created_at >= ?'); args.push(period.from.toISOString());}
+      if (period.to) {conds.push('created_at <= ?'); args.push(period.to.toISOString());}
+      const rows = await sql(db, `SELECT user_id,quiz_id,score,created_at FROM quiz_attempts ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''} ORDER BY created_at, attempt_id`, ...args).all();
+      const cells = {};
+      for (const r of rows.results) {
+        if (!ids.has(r.quiz_id)) continue;
+        const u = cells[r.user_id] ||= {}, c = u[r.quiz_id] ||= {best: 0, last: 0, attempts: 0, lastAt: null};
+        c.best = Math.max(c.best, r.score); c.last = r.score; c.attempts++; c.lastAt = iso(r.created_at);
+      }
+      const users = (await userList(db)).map(({id, name, email, role, status}) => ({id, name, email, role, status}));
+      return json({quizzes: catalog.map(q => ({id: q.id, title: q.title, category: q.category, questions: q.questions.length})), users, cells, period: {from: period.fromDay, to: period.toDay}, generatedAt: new Date().toISOString()});
+    }
+
     // ---------- Laporan ----------
     if (path === '/api/admin/report' && method === 'GET') {
       const catalog = await publishedCatalogLite(db);

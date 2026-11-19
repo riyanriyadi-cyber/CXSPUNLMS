@@ -215,5 +215,21 @@ test('Admin panel API', async t => {
     const ri = await call(`/api/admin/users/${invited.id}/raport`, {token: adm});
     assert.equal(ri.status, 200); assert.equal(ri.data.summary.coursesFollowed, 0);
   });
+  await t.test('scores matrix: best/last/attempts per user × quiz, period filter, admin only', async () => {
+    const quizId = (await call('/api/catalog', {token: lrn})).data.quizzes.find(q => q.title === 'Quiz Schengen').id;
+    await call(`/api/quizzes/${quizId}/attempts`, {token: lrn, body: {attemptId: randomUUID(), answers: [0]}});
+    await call(`/api/quizzes/${quizId}/attempts`, {token: adm, body: {attemptId: randomUUID(), answers: [1]}});
+    const r = await call('/api/admin/scores', {token: adm});
+    assert.equal(r.status, 200);
+    assert.ok(r.data.quizzes.some(q => q.id === quizId && q.questions === 1));
+    assert.deepEqual(r.data.cells[L.id][quizId], {...r.data.cells[L.id][quizId], best: 100, last: 0, attempts: 2});
+    assert.equal(r.data.cells[ADM.id][quizId].best, 100);
+    assert.ok(r.data.users.some(u => u.status === 'invited'));
+    assert.ok(r.data.users.find(u => u.id === ADM.id).role === 'admin');
+    const past = await call('/api/admin/scores?from=2020-01-01&to=2020-12-31', {token: adm});
+    assert.deepEqual(past.data.cells, {}); assert.deepEqual(past.data.period, {from: '2020-01-01', to: '2020-12-31'});
+    assert.equal((await call('/api/admin/scores', {token: lrn})).status, 403);
+    assert.equal((await call('/api/admin/scores?to=2026-99-01', {token: adm})).status, 422);
+  });
   await pg.close();
 });

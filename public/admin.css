@@ -155,3 +155,41 @@ dialog.modal-full .modal-body{padding:0;height:calc(100vh - 66px);overflow:auto}
 .rte-body .ProseMirror-gapcursor:after{border-top:1px solid #333}
 .rte-status{font-size:11px;color:#c25c18;padding:0 12px}
 .rte-status:not(:empty){padding:6px 12px;border-top:1px solid #f1f3ee}
+/* ---- Nilai Quiz ---- */
+.score-filters{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;margin:0 0 14px}
+.score-filters label{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:600;color:#7b8870}
+.score-filters label.grow{flex:1;min-width:180px}
+.score-filters select,.score-filters input[type=search],.score-filters input[type=date]{border:1px solid #e1e6da;border-radius:8px;padding:9px 11px;font:inherit;font-size:12px;color:var(--ink);background:#fff;min-height:38px}
+.score-filters .inline-check{flex-direction:row;align-items:center;gap:7px;min-height:38px;font-weight:500;color:#4f5b53}
+.score-filters .raport-custom{display:flex;gap:12px}.score-filters .raport-custom[hidden]{display:none}
+.score-meta{font-size:11px;color:#98a091;margin:0 0 10px}
+.score-wrap{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:auto;max-height:calc(100vh - 290px);margin-bottom:26px}
+.score-matrix{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%}
+.score-matrix th,.score-matrix td{border-bottom:1px solid #f1f3ee;padding:10px 12px;background:#fff;text-align:center;white-space:nowrap}
+.score-matrix thead th{position:sticky;top:0;z-index:2;background:#fbfcf9;font-size:10.5px;font-weight:650;color:#6f7a6d;border-bottom:1px solid var(--line);vertical-align:bottom}
+.score-matrix .sm-user{position:sticky;left:0;z-index:1;text-align:left;min-width:200px;max-width:240px;border-right:1px solid var(--line);white-space:normal}
+.score-matrix thead .sm-user{z-index:3}
+.score-matrix tbody .sm-user a{font-weight:650;color:var(--ink);font-size:12.5px}
+.score-matrix tbody .sm-user a:hover{color:#d16527}
+.score-matrix .sm-user small{display:block;font-size:10.5px;font-weight:400;color:#a1ab94;margin-top:2px;overflow:hidden;text-overflow:ellipsis}
+.score-matrix .sm-q{min-width:118px;max-width:150px;white-space:normal;line-height:1.35}
+.score-matrix .sm-q a{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;color:#3e4b43;text-decoration:underline;text-decoration-color:#d9ddd3;text-underline-offset:3px}
+.score-matrix .sm-q a:hover{color:#d16527}
+.score-matrix .sm-num{font-variant-numeric:tabular-nums;color:#4f5b53}
+.score-matrix tbody tr:hover td,.score-matrix tbody tr:hover th{background:#fbfaf6}
+.score-matrix tfoot th,.score-matrix tfoot td{position:sticky;bottom:0;background:#f6f7f2;font-size:10.5px;color:#6f7a6d;border-top:1px solid var(--line);border-bottom:0;line-height:1.5}
+.score-matrix tfoot .sm-user{z-index:2}
+.sc{display:inline-flex;align-items:center;justify-content:center;gap:3px;min-width:44px;padding:4px 8px;border-radius:999px;font-weight:700;font-variant-numeric:tabular-nums;font-size:12px}
+.sc svg,.sc-status svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sc-pass{background:#e7f3ea;color:#2f6b45}
+.sc-fail{background:#fff2df;color:#9a5212}
+.sc-none{color:#c3c9bb;font-weight:500}
+a.sc:hover{outline:2px solid #f7c9a6}
+.sc-tries{display:block;font-size:9.5px;color:#a1ab94;margin-top:2px}
+.sort-btn{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:4px;text-transform:inherit;letter-spacing:inherit}
+.sort-btn span{font-size:9px;color:#b4bcaa}
+.mini-sort{display:block;margin:4px auto 0;font-size:9px;color:#b4bcaa}
+.score-matrix thead .sm-user .sort-btn{font-size:10.5px}
+.score-stats .stat-value em{font-style:normal;font-size:15px;color:#98a091}
+.sc-status{display:inline-flex;align-items:center;gap:4px}
+@media (max-width:720px){.score-matrix .sm-user{min-width:150px;max-width:170px}.score-matrix .sm-q{min-width:100px}.score-wrap{max-height:none}}
