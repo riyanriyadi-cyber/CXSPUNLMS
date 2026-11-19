@@ -24199,32 +24199,35 @@ var securityHeaders = {
 
 // server/schema.mjs
 var ESSAY_GRADING = [
-  "alter table public.quiz_attempts alter column score drop not null",
-  "alter table public.quiz_attempts add column if not exists status text not null default 'graded'",
-  "alter table public.quiz_attempts add column if not exists max_points integer",
-  "alter table public.quiz_attempts add column if not exists earned_points numeric(8,2)",
-  "alter table public.quiz_attempts add column if not exists graded_at timestamptz",
-  "alter table public.quiz_attempts add column if not exists graded_by uuid references public.users (id) on delete set null",
+  "alter table quiz_attempts alter column score drop not null",
+  "alter table quiz_attempts add column if not exists status text not null default 'graded'",
+  "alter table quiz_attempts add column if not exists max_points integer",
+  "alter table quiz_attempts add column if not exists earned_points numeric(8,2)",
+  "alter table quiz_attempts add column if not exists graded_at timestamptz",
+  "alter table quiz_attempts add column if not exists graded_by uuid references users (id) on delete set null",
   `do $$ begin
     if not exists (select 1 from pg_constraint where conname = 'quiz_attempts_status_check') then
-      alter table public.quiz_attempts add constraint quiz_attempts_status_check
+      alter table quiz_attempts add constraint quiz_attempts_status_check
         check ((status = 'graded' and score is not null) or (status = 'pending' and score is null));
     end if;
   end $$`,
-  "create index if not exists attempt_pending_idx on public.quiz_attempts (created_at) where status = 'pending'"
+  "create index if not exists attempt_pending_idx on quiz_attempts (created_at) where status = 'pending'"
 ];
 var checked = /* @__PURE__ */ new WeakMap();
 function ensureSchema(db) {
   let p = checked.get(db);
   if (!p) {
     p = (async () => {
-      const has = await db.prepare("SELECT 1 AS x FROM information_schema.columns WHERE table_schema='public' AND table_name='quiz_attempts' AND column_name='status'").first();
+      const has = await db.prepare("SELECT 1 AS x FROM pg_attribute WHERE attrelid = to_regclass('quiz_attempts') AND attname = 'status' AND NOT attisdropped").first();
       if (has) return false;
       await db.batch(ESSAY_GRADING.map((q) => db.prepare(q)));
-      console.log("Learning Hub: migrasi essay & penilaian diterapkan otomatis.");
+      console.warn("Learning Hub: migrasi essay & penilaian diterapkan otomatis.");
       return true;
     })();
-    p.catch(() => checked.delete(db));
+    p.catch((e) => {
+      checked.delete(db);
+      console.error("Learning Hub: migrasi otomatis gagal:", e?.message);
+    });
     checked.set(db, p);
   }
   return p;
@@ -24245,13 +24248,14 @@ async function resolveUser(db, verified) {
   }
   return { id: verified.id, name: row.name, email: row.email, role: row.role, status: row.status };
 }
+var VERSION = "3.6.2";
 function createHandler({ getDb, verifyToken, config: config2, admin }) {
   return async function handle2(request) {
     let response;
     try {
       const url = new URL(request.url), path = url.pathname;
       if (path === "/api/auth/config" && request.method === "GET") {
-        response = config2.supabaseUrl && config2.supabaseKey ? json({ mode: "supabase", registration: config2.allowRegistration, supabaseUrl: config2.supabaseUrl, supabaseKey: config2.supabaseKey }) : json({ error: "Konfigurasi Supabase belum lengkap di server." }, 503);
+        response = config2.supabaseUrl && config2.supabaseKey ? json({ mode: "supabase", version: VERSION, registration: config2.allowRegistration, supabaseUrl: config2.supabaseUrl, supabaseKey: config2.supabaseKey }) : json({ error: "Konfigurasi Supabase belum lengkap di server." }, 503);
       } else {
         const token = bearer(request);
         const verified = token ? await verifyToken(token) : null;

@@ -23,6 +23,7 @@ async function resolveUser(db, verified) {
 }
 
 import {ensureSchema} from './schema.mjs';
+export const VERSION = '3.6.2';
 
 export function createHandler({getDb, verifyToken, config, admin}) {
   return async function handle(request) {
@@ -31,7 +32,7 @@ export function createHandler({getDb, verifyToken, config, admin}) {
       const url = new URL(request.url), path = url.pathname;
       if (path === '/api/auth/config' && request.method === 'GET') {
         response = config.supabaseUrl && config.supabaseKey
-          ? json({mode: 'supabase', registration: config.allowRegistration, supabaseUrl: config.supabaseUrl, supabaseKey: config.supabaseKey})
+          ? json({mode: 'supabase', version: VERSION, registration: config.allowRegistration, supabaseUrl: config.supabaseUrl, supabaseKey: config.supabaseKey})
           : json({error: 'Konfigurasi Supabase belum lengkap di server.'}, 503);
       } else {
         const token = bearer(request);
