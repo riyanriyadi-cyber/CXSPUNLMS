@@ -24197,6 +24197,39 @@ var securityHeaders = {
   "Content-Security-Policy": csp
 };
 
+// server/schema.mjs
+var ESSAY_GRADING = [
+  "alter table public.quiz_attempts alter column score drop not null",
+  "alter table public.quiz_attempts add column if not exists status text not null default 'graded'",
+  "alter table public.quiz_attempts add column if not exists max_points integer",
+  "alter table public.quiz_attempts add column if not exists earned_points numeric(8,2)",
+  "alter table public.quiz_attempts add column if not exists graded_at timestamptz",
+  "alter table public.quiz_attempts add column if not exists graded_by uuid references public.users (id) on delete set null",
+  `do $$ begin
+    if not exists (select 1 from pg_constraint where conname = 'quiz_attempts_status_check') then
+      alter table public.quiz_attempts add constraint quiz_attempts_status_check
+        check ((status = 'graded' and score is not null) or (status = 'pending' and score is null));
+    end if;
+  end $$`,
+  "create index if not exists attempt_pending_idx on public.quiz_attempts (created_at) where status = 'pending'"
+];
+var checked = /* @__PURE__ */ new WeakMap();
+function ensureSchema(db) {
+  let p = checked.get(db);
+  if (!p) {
+    p = (async () => {
+      const has = await db.prepare("SELECT 1 AS x FROM information_schema.columns WHERE table_schema='public' AND table_name='quiz_attempts' AND column_name='status'").first();
+      if (has) return false;
+      await db.batch(ESSAY_GRADING.map((q) => db.prepare(q)));
+      console.log("Learning Hub: migrasi essay & penilaian diterapkan otomatis.");
+      return true;
+    })();
+    p.catch(() => checked.delete(db));
+    checked.set(db, p);
+  }
+  return p;
+}
+
 // server/app.mjs
 var bearer = (request) => {
   const value = request.headers.get("authorization") || "";
@@ -24225,6 +24258,7 @@ function createHandler({ getDb, verifyToken, config: config2, admin }) {
         if (!verified) response = json({ error: "Silakan masuk untuk melanjutkan." }, 401);
         else {
           const db = await getDb();
+          await ensureSchema(db);
           const user = await resolveUser(db, verified);
           if (user.status === "disabled") response = json({ error: "Akun kamu sedang dinonaktifkan. Hubungi pengelola Learning Hub.", code: "disabled" }, 403);
           else if (path.startsWith("/api/admin/")) {

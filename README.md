@@ -40,6 +40,7 @@ Keamanan: HTML dari editor disaring ketat di server (`server/rich.mjs`, daftar i
 | `server/admin.mjs` | API admin |
 | `server/content.mjs` | Model, validasi, dan escape materi |
 | `server/rich.mjs` | Penyaring HTML kolom Isi |
+| `server/schema.mjs` | Menerapkan perubahan database versi ini secara otomatis (hanya menambah, aman diulang) |
 | `server/raport.mjs` | Perhitungan raport per peserta & periode |
 | `public/raport.js` | Tampilan raport (dipakai aplikasi peserta & panel admin) |
 | `client/editor.js` | Editor teks panel admin (di-bundle menjadi `public/editor.js`) |
@@ -52,8 +53,8 @@ Keamanan: HTML dari editor disaring ketat di server (`server/rich.mjs`, daftar i
 ## Upgrade ke v3.6 (dari v3.x yang sudah live)
 
 1. Ganti file di GitHub dengan isi ZIP ini, commit.
-2. **Supabase → SQL Editor**: jalankan `supabase/migrations/20261119000000_essay_grading.sql` (menambah status penilaian pada `quiz_attempts`; data lama otomatis berstatus *dinilai*).
-3. Tunggu Vercel selesai deploy. Menu **Penilaian** dan tombol impor/ekspor di daftar Quiz langsung tersedia.
+2. Tunggu Vercel selesai deploy. Sejak v3.6.1 perubahan database (`20261119000000_essay_grading.sql`: status penilaian pada `quiz_attempts`) diterapkan **otomatis** oleh server pada request pertama, langsung ke database di `DATABASE_URL`; data lama berstatus *dinilai*. Menjalankan file itu manual di SQL Editor tetap boleh (aman diulang).
+3. Buka Learning Hub. Menu **Penilaian** dan tombol impor/ekspor di daftar Quiz langsung tersedia.
 
 ## Upgrade dari versi tanpa admin (sudah live)
 

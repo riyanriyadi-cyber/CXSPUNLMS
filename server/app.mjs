@@ -22,6 +22,8 @@ async function resolveUser(db, verified) {
   return {id: verified.id, name: row.name, email: row.email, role: row.role, status: row.status};
 }
 
+import {ensureSchema} from './schema.mjs';
+
 export function createHandler({getDb, verifyToken, config, admin}) {
   return async function handle(request) {
     let response;
@@ -37,6 +39,7 @@ export function createHandler({getDb, verifyToken, config, admin}) {
         if (!verified) response = json({error: 'Silakan masuk untuk melanjutkan.'}, 401);
         else {
           const db = await getDb();
+          await ensureSchema(db);
           const user = await resolveUser(db, verified);
           if (user.status === 'disabled') response = json({error: 'Akun kamu sedang dinonaktifkan. Hubungi pengelola Learning Hub.', code: 'disabled'}, 403);
           else if (path.startsWith('/api/admin/')) {
