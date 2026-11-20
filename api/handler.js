@@ -23412,6 +23412,52 @@ function section(s, i, label, ctx) {
   }
   return out;
 }
+var GID = "([A-Za-z0-9_-]{10,})";
+function docInfo(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.username || url.password) return null;
+  const host = url.hostname.toLowerCase(), path = url.pathname;
+  let m;
+  if (host === "docs.google.com") {
+    if (m = path.match(new RegExp(`^/document/(?:u/\\d+/)?d/${GID}`))) return { type: "doc", preview: `https://docs.google.com/document/d/${m[1]}/preview` };
+    if (m = path.match(new RegExp(`^/spreadsheets/(?:u/\\d+/)?d/${GID}`))) return { type: "sheet", preview: `https://docs.google.com/spreadsheets/d/${m[1]}/preview` };
+    if (m = path.match(new RegExp(`^/presentation/(?:u/\\d+/)?d/${GID}`))) return { type: "slides", preview: `https://docs.google.com/presentation/d/${m[1]}/embed` };
+    if (m = path.match(new RegExp(`^/forms/(?:u/\\d+/)?d/e/${GID}`))) return { type: "form", preview: `https://docs.google.com/forms/d/e/${m[1]}/viewform?embedded=true` };
+    return { type: "link", preview: "" };
+  }
+  if (host === "drive.google.com") {
+    if (m = path.match(new RegExp(`^/(?:u/\\d+/)?file/d/${GID}`))) return { type: "drive", preview: `https://drive.google.com/file/d/${m[1]}/preview` };
+    if (m = path.match(new RegExp(`^/(?:u/\\d+/)?drive/(?:u/\\d+/)?folders/${GID}`))) return { type: "folder", preview: `https://drive.google.com/embeddedfolderview?id=${m[1]}#list` };
+    const id = url.searchParams.get("id");
+    if ((path === "/open" || path === "/uc") && id && new RegExp(`^${GID}$`).test(id)) return { type: "drive", preview: `https://drive.google.com/file/d/${id}/preview` };
+    return { type: "link", preview: "" };
+  }
+  return { type: /\.pdf$/i.test(path) ? "pdf" : "link", preview: "" };
+}
+function docs(list, label) {
+  return arr(list, 20, `${label}: dokumen terkait`).map((x, i) => {
+    const where = `${label}, dokumen ${i + 1}`;
+    if (!x || typeof x !== "object") bad(`${where} tidak valid.`);
+    const title = str(x.title, 160, `${where}: judul`);
+    const ref = typeof x.ref === "string" ? x.ref.trim() : "";
+    if (ref) {
+      const [k, id] = ref.split(":");
+      if (!["article", "course"].includes(k) || !ID_RE.test(id || "")) bad(`${where}: pilih artikel atau course dari daftar.`);
+      return { title, ref: `${k}:${id}`, type: k };
+    }
+    const url = str(x.url, 1e3, `${where}: link`);
+    if (!url) return { title, url: "", type: "link", preview: "" };
+    if (/["'<>\s`]/.test(url)) bad(`${where}: link mengandung karakter yang tidak diizinkan.`);
+    const info = docInfo(url);
+    if (!info) bad(`${where}: link harus diawali https://`);
+    return { title, url, ...info };
+  });
+}
 function lessonIdFor(raw, used) {
   let id = typeof raw === "string" && ID_RE.test(raw) ? raw : "";
   while (!id || used.has(id)) id = "m" + Math.random().toString(36).slice(2, 10);
@@ -23435,7 +23481,8 @@ function normalize(kind, d, ctx) {
         title: str(l.title, 160, `Modul ${i + 1}: judul`),
         duration: int(l.duration, 1, 600, `Modul ${i + 1}: durasi`, 5),
         intro: str(l.intro, 2e3, `Modul ${i + 1}: pengantar`),
-        sections: arr(l.sections, 40, `Modul ${i + 1}: bagian`).map((s, j) => section(s, j, `Modul ${i + 1}`, ctx))
+        sections: arr(l.sections, 40, `Modul ${i + 1}: bagian`).map((s, j) => section(s, j, `Modul ${i + 1}`, ctx)),
+        docs: docs(l.docs, `Modul ${i + 1}`)
       };
     });
     return { ...base, level: pick(d.level, LEVELS, "Fundamental"), art: pick(d.art, ARTS, "conversation"), lessons };
@@ -23463,11 +23510,13 @@ function normalize(kind, d, ctx) {
       art: pick(d.art, ARTS, "conversation"),
       minutes: int(d.minutes, 1, 300, "Estimasi menit baca", 5),
       featured: d.featured === true,
-      sections: arr(d.sections, 40, "Bagian artikel").map((s, j) => section(s, j, "Artikel", ctx))
+      sections: arr(d.sections, 40, "Bagian artikel").map((s, j) => section(s, j, "Artikel", ctx)),
+      docs: docs(d.docs, "Artikel")
     };
   }
   bad("Jenis konten tidak dikenal.");
 }
+var filled = (list) => (list || []).filter((x) => x.url || x.ref);
 function forPublish(kind, d) {
   const need = (cond, msg) => {
     if (!cond) bad(msg);
@@ -23482,7 +23531,8 @@ function forPublish(kind, d) {
       need(l.intro || l.sections.length, `Modul ${i + 1}: isi pengantar atau minimal 1 bagian.`);
       l.sections.forEach((s, j) => need(s.heading || hasRichContent(s.html) || s.image || s.video, `Modul ${i + 1}, bagian ${j + 1} masih kosong.`));
     });
-    return { ...d, label: d.category.toUpperCase(), minutes: d.lessons.reduce((n, l) => n + l.duration, 0) };
+    const lessons = d.lessons.map((l) => ({ ...l, docs: filled(l.docs) }));
+    return { ...d, lessons, label: d.category.toUpperCase(), minutes: d.lessons.reduce((n, l) => n + l.duration, 0) };
   }
   if (kind === "quiz") {
     need(d.questions.length, "Quiz butuh minimal 1 pertanyaan sebelum publish.");
@@ -23495,7 +23545,7 @@ function forPublish(kind, d) {
     return d;
   }
   need(d.sections.length, "Artikel butuh minimal 1 bagian sebelum publish.");
-  return d;
+  return { ...d, docs: filled(d.docs) };
 }
 var ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 var escapeDeep = (v) => typeof v === "string" ? v.replace(/[&<>"']/g, (c) => ESC[c]) : Array.isArray(v) ? v.map(escapeDeep) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "html" && typeof x === "string" ? x : escapeDeep(x)])) : v;
@@ -23786,7 +23836,7 @@ function safeCatalog(catalog, lock = null) {
   return escapeDeep({
     courses: catalog.courses.map(({ version, ...c }) => openCourse(c.id) ? c : { ...c, locked: true, lessons: c.lessons.map(({ id, title, duration }) => ({ id, title, duration, sections: [] })) }),
     quizzes: catalog.quizzes.map(({ version, ...q }) => openQuiz(q.id) ? { ...q, questions: q.questions.map(({ q: q2, options, type, points }) => ({ q: q2, type: type || "mc", options: type === "essay" ? [] : options, points: points || 1 })) } : { ...q, locked: true, questions: q.questions.map(({ type, points }) => ({ q: "", type: type || "mc", options: [], points: points || 1 })) }),
-    articles: catalog.articles.map(({ version, ...a }) => lock ? { ...a, publishedAt: version, locked: true, sections: [] } : { ...a, publishedAt: version })
+    articles: catalog.articles.map(({ version, ...a }) => lock ? { ...a, publishedAt: version, locked: true, sections: [], docs: [] } : { ...a, publishedAt: version })
   });
 }
 var LOCKED = "Materi ini terbuka setelah onboarding selesai. Selesaikan dulu course onboarding-mu.";
@@ -24353,7 +24403,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
 }
 
 // server/headers.mjs
-var csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.supabase.co; frame-src https://www.youtube-nocookie.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co; form-action 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'";
+var csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.supabase.co; frame-src https://www.youtube-nocookie.com https://docs.google.com https://drive.google.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co; form-action 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'";
 var securityHeaders = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
@@ -24432,7 +24482,7 @@ async function resolveUser(db, verified) {
   }
   return { id: verified.id, name: row.name, email: row.email, role: row.role, status: row.status };
 }
-var VERSION = "3.7.0";
+var VERSION = "3.8.0";
 function createHandler({ getDb, verifyToken, config: config2, admin }) {
   return async function handle2(request) {
     let response;

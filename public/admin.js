@@ -193,6 +193,27 @@
   const tools = (arr, i, n, what) => `<span class="ed-tools"><button type="button" class="mini" data-act="move" data-arr="${arr}" data-i="${i}" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="Naikkan ${what}">↑</button><button type="button" class="mini" data-act="move" data-arr="${arr}" data-i="${i}" data-dir="1" ${i === n - 1 ? 'disabled' : ''} aria-label="Turunkan ${what}">↓</button><button type="button" class="mini mini-danger" data-act="remove" data-arr="${arr}" data-i="${i}" aria-label="Hapus ${what}">✕</button></span>`;
   const catList = () => `<datalist id="cat-list">${[...new Set(items.map(i => i.category).filter(Boolean))].map(c => `<option value="${esc(c)}">`).join('')}</datalist>`;
 
+  const DOC_LABEL = {doc: 'Google Docs', sheet: 'Google Sheets', slides: 'Google Slides', form: 'Google Forms', drive: 'File Google Drive', folder: 'Folder Google Drive', pdf: 'PDF', link: 'Tautan'};
+  function docKind(url) {
+    let u; try {u = new URL(url);} catch {return null;}
+    if (u.protocol !== 'https:') return null;
+    const h = u.hostname, p = u.pathname;
+    if (h === 'docs.google.com') return /^\/document\//.test(p) ? 'doc' : /^\/spreadsheets\//.test(p) ? 'sheet' : /^\/presentation\//.test(p) ? 'slides' : /^\/forms\//.test(p) ? 'form' : 'link';
+    if (h === 'drive.google.com') return /\/folders\//.test(p) ? 'folder' : 'drive';
+    return /\.pdf$/i.test(p) ? 'pdf' : 'link';
+  }
+  const docHint = url => {if (!url) return 'Tempel link Google Docs, Sheets, Slides, file/folder Drive, atau PDF.'; const k = docKind(url); return k ? `Terdeteksi: ${DOC_LABEL[k]}${['doc', 'sheet', 'slides', 'form', 'drive', 'folder'].includes(k) ? ' ✓ bisa dipratinjau' : ' · dibuka di tab baru'}` : 'Link harus diawali https://';};
+  function docsEditor(base) {
+    const list = val(base) || [];
+    const opts = [['', 'Pilih artikel atau course…'], ...items.filter(i => i.kind === 'article').map(i => ['article:' + i.id, 'Artikel · ' + i.title]), ...items.filter(i => i.kind === 'course' && !(editor.kind === 'course' && i.id === editor.id)).map(i => ['course:' + i.id, 'Course · ' + i.title])];
+    return `<div class="ed-docs"><h4 class="ed-subhead">Dokumen terkait <small>opsional · tampil sebagai kartu di bawah isi</small></h4>
+      ${list.map((x, j) => {const p = `${base}.${j}`, internal = x.ref !== undefined;
+        return `<div class="ed-doc">${internal ? fSelect('Artikel / course LMS', `${p}.ref`, opts, {cls: 'span-2'}) : `<label class="span-2">Link<input type="url" data-f="${p}.url" data-doc-url value="${esc(x.url || '')}" maxlength="1000" placeholder="https://docs.google.com/…" /><small class="doc-detect">${esc(docHint(x.url))}</small></label>`}
+        ${fInput('Judul (opsional)', `${p}.title`, {max: 160, ph: internal ? 'Pakai judul artikel/course' : 'Contoh: SOP Verifikasi Dokumen'})}
+        <span class="ed-tools">${tools(base, j, list.length, 'dokumen').replace(/^<span class="ed-tools">|<\/span>$/g, '')}</span></div>`;}).join('')}
+      <div class="ed-doc-add"><button type="button" class="btn btn-subtle" data-act="add-doc" data-arr="${base}">+ Link dokumen</button> <button type="button" class="btn btn-subtle" data-act="add-doc" data-arr="${base}" data-internal="1">+ Artikel/course LMS</button></div>
+      <p class="ed-doc-note">File Google Drive: atur <b>Bagikan → Akses umum → "Siapa saja yang memiliki link" (Viewer)</b> agar bisa dibuka peserta, termasuk freelancer di luar akun SPUN. Jangan menautkan file berisi data pelanggan.</p></div>`;
+  }
   function sectionsEditor(base) {
     const list = val(base) || [];
     return `<div class="ed-sections">${list.map((s, j) => {
@@ -214,7 +235,7 @@
       <summary><span class="ed-num">${i + 1}</span><span class="ed-title">${esc(l.title || 'Modul tanpa judul')}</span><span class="ed-meta">${Number(l.duration) || 0} menit · ${(l.sections || []).length} bagian</span>${tools('lessons', i, n, 'modul')}</summary>
       <div class="ed-body"><div class="form-grid">${fInput('Judul modul', `lessons.${i}.title`, {max: 160, cls: 'span-2'})}${fInput('Durasi (menit)', `lessons.${i}.duration`, {num: true})}</div>
       ${fText('Pengantar', `lessons.${i}.intro`, {rows: 2, max: 2000, hint: 'Ditampilkan sebagai kotak ringkasan di awal modul.'})}
-      <h4 class="ed-subhead">Isi modul</h4>${sectionsEditor(`lessons.${i}.sections`)}
+      <h4 class="ed-subhead">Isi modul</h4>${sectionsEditor(`lessons.${i}.sections`)}${docsEditor(`lessons.${i}.docs`)}
       <div class="ed-item-foot"><button type="button" class="btn btn-outline" data-act="preview-lesson" data-i="${i}">Pratinjau modul</button></div></div></details>`;
   }
   function questionCard(q, i, n) {
@@ -244,7 +265,7 @@
     } else {
       body = `<section class="ed-card"><h2>Informasi artikel</h2><div class="form-grid">${fInput('Judul', 'title', {max: 140, cls: 'span-2'})}${fInput('Kategori / topik', 'category', {max: 60, list: 'cat-list'})}${fInput('Estimasi baca (menit)', 'minutes', {num: true})}${fSelect('Warna kartu', 'color', COLORS)}${fSelect('Ilustrasi', 'art', ARTS)}</div>${fText('Ringkasan pembuka', 'description', {rows: 2, max: 500})}
         <label class="check"><input type="checkbox" data-f="featured" data-bool ${d.featured ? 'checked' : ''} /> Jadikan Editor's Pick di Knowledge Center</label>${catList()}</section>
-        <section class="ed-card"><div class="ed-card-head"><h2>Isi artikel</h2></div>${sectionsEditor('sections')}<div class="ed-item-foot"><button type="button" class="btn btn-outline" data-act="preview-article">Pratinjau artikel</button></div></section>`;
+        <section class="ed-card"><div class="ed-card-head"><h2>Isi artikel</h2></div>${sectionsEditor('sections')}${docsEditor('docs')}<div class="ed-item-foot"><button type="button" class="btn btn-outline" data-act="preview-article">Pratinjau artikel</button></div></section>`;
     }
     main.innerHTML = `<div class="editor content-fade">
       <div class="admin-head"><div><a class="text-link back-link" href="#content/${kind}">← Semua ${K.label.toLowerCase()}</a><h1>${esc(d.title || K.label + ' tanpa judul')}</h1><p class="subtitle">${badge(STATUS[status])}${editor.publishedAt ? ` <span class="when">Terakhir publish ${fmtDate(editor.publishedAt)}</span>` : ''}</p></div></div>
@@ -305,6 +326,14 @@
       const {item} = await api.post(`/api/admin/content/${editor.kind}/${editor.id}/publish`, {});
       applyItem(item); renderEditor(); toast('Tayang! Peserta sudah bisa melihat versi terbaru.');
     } catch (e) {editor.error = e.message; editor.conflict = false; renderEditor(); window.scrollTo({top: 0, behavior: 'smooth'});}
+  }
+  function previewDocs(list) {
+    const rows = (list || []).filter(x => x.url || x.ref).map(x => {
+      if (x.ref) {const [k, id] = x.ref.split(':'), it = items.find(i => i.kind === k && i.id === id); return it ? `<li class="doc-card"><span class="doc-icon" style="--doc:#d16527">${k === 'article' ? 'A' : 'C'}</span><div class="doc-main"><span class="doc-title">${esc(x.title || it.title)}</span><small>${k === 'article' ? 'Artikel Knowledge Center' : 'Course'}</small></div></li>` : '';}
+      const k = docKind(x.url) || 'link';
+      return `<li class="doc-card"><span class="doc-icon" style="--doc:#4c6b5a">↗</span><div class="doc-main"><a class="doc-title" href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.title || DOC_LABEL[k])}</a><small>${DOC_LABEL[k]}</small></div></li>`;
+    }).join('');
+    return rows ? `<section class="docs-block"><h3>Dokumen terkait</h3><ul class="doc-list">${rows}</ul></section>` : '';
   }
   function previewSections(sections) {
     return (sections || []).map(s => {
@@ -628,6 +657,7 @@
     box.innerHTML = `Total <b>${pts(earned)}</b> / ${pts(max)} poin · skor <b>${missing ? '—' : score}</b>/100 ${missing ? `<small>${missing} essay belum diberi nilai</small>` : score >= 80 ? '<span class="st st-live">Lulus</span>' : '<span class="st st-changed">Belum lulus</span>'}`;
   }
   main.addEventListener('input', e => {if (e.target.dataset?.grade !== undefined) updateGradeTotal();});
+  main.addEventListener('input', e => {if (e.target.dataset?.docUrl !== undefined) {const h = e.target.parentElement.querySelector('.doc-detect'); if (h) h.textContent = docHint(e.target.value.trim());}});
   main.addEventListener('submit', async e => {
     if (e.target.id !== 'grade-form') return; e.preventDefault();
     const f = e.target, btn = f.querySelector('[type=submit]');
@@ -781,6 +811,7 @@
         case 'reload-editor': {const {kind, id} = editor; editor = null; await openEditor(kind, id); break;}
         case 'add-lesson': {const id = newId(); d.lessons.push({id, title: '', duration: 5, intro: '', sections: [{heading: '', html: ''}]}); openKeys.add('L:' + id); markDirty(); renderEditor(); break;}
         case 'add-question': d.questions.push(b.dataset.type === 'essay' ? {type: 'essay', q: '', points: 5, rubric: ''} : {type: 'mc', q: '', options: ['', '', '', ''], answer: null, why: '', points: 1}); openKeys.add('Q:' + (d.questions.length - 1)); markDirty(); renderEditor(); break;
+        case 'add-doc': {const p = b.dataset.arr.split('.'), key = p.pop(), parent = p.length ? getPath(d, p.join('.')) : d; (parent[key] ||= []).push(b.dataset.internal ? {title: '', ref: ''} : {title: '', url: ''}); markDirty(); renderEditor(); break;}
         case 'add-section': getPath(d, b.dataset.arr).push({heading: '', html: ''}); markDirty(); renderEditor(); break;
         case 'add-option': d.questions[b.dataset.q].options.push(''); markDirty(); renderEditor(); break;
         case 'remove-option': {
@@ -794,7 +825,7 @@
           [arr[i], arr[j]] = [arr[j], arr[i]]; markDirty(); renderEditor(); break;
         }
         case 'remove': {
-          const arr = getPath(d, b.dataset.arr), i = Number(b.dataset.i), what = b.dataset.arr === 'lessons' ? 'modul' : b.dataset.arr === 'questions' ? 'pertanyaan' : 'bagian';
+          const arr = getPath(d, b.dataset.arr), i = Number(b.dataset.i), what = b.dataset.arr === 'lessons' ? 'modul' : b.dataset.arr === 'questions' ? 'pertanyaan' : /(^|\.)docs$/.test(b.dataset.arr) ? 'dokumen' : 'bagian';
           const filled = JSON.stringify(arr[i]).replace(/"(id|duration|answer)":[^,}]*/g, '').match(/:"[^"]+"/);
           if (filled && !await confirmBox(`Hapus ${what} ini beserta isinya?`, 'Hapus', true)) break;
           arr.splice(i, 1); if (b.dataset.arr === 'questions') openKeys.clear(); markDirty(); renderEditor(); break;
@@ -804,11 +835,11 @@
         case 'preview-lesson': {
           const i = Number(b.dataset.i), l = d.lessons[i];
           const outline = `<aside class="learn-outline"><div class="outline-head"><span class="back-link">Pratinjau draft</span><h2>${esc(d.title || 'Course tanpa judul')}</h2></div><ol class="outline-list">${d.lessons.map((x, j) => `<li><button type="button" class="outline-item ${j === i ? 'current' : ''}" data-act="preview-lesson" data-i="${j}"><span class="outline-dot">${j + 1}</span><span>${esc(x.title || 'Modul tanpa judul')}<small>${Number(x.duration) || 0} menit</small></span></button></li>`).join('')}</ol></aside>`;
-          showModal('Pratinjau modul — tampilan peserta', `<div class="preview-stage"><div class="learn-layout">${outline}<article class="learn-main lesson-content"><div class="modal-kicker">${esc(d.category)} · Modul ${i + 1} dari ${d.lessons.length} · ${Number(l.duration) || 0} menit</div><h1 class="learn-title">${esc(l.title || 'Modul tanpa judul')}</h1>${l.intro ? `<p class="lead">${esc(l.intro)}</p>` : ''}${previewSections(l.sections)}<div class="lesson-actions"><span class="sample-note">Pratinjau draft — peserta baru melihatnya setelah Publish.</span></div></article></div></div>`, 'full');
+          showModal('Pratinjau modul — tampilan peserta', `<div class="preview-stage"><div class="learn-layout">${outline}<article class="learn-main lesson-content"><div class="modal-kicker">${esc(d.category)} · Modul ${i + 1} dari ${d.lessons.length} · ${Number(l.duration) || 0} menit</div><h1 class="learn-title">${esc(l.title || 'Modul tanpa judul')}</h1>${l.intro ? `<p class="lead">${esc(l.intro)}</p>` : ''}${previewSections(l.sections) + previewDocs(l.docs)}<div class="lesson-actions"><span class="sample-note">Pratinjau draft — peserta baru melihatnya setelah Publish.</span></div></article></div></div>`, 'full');
           break;
         }
         case 'preview-article':
-          showModal('Pratinjau artikel — tampilan peserta', `<div class="preview-stage"><div class="page-narrow"><article class="article-reader page-card"><div class="modal-kicker">${esc(d.category)}</div><h1>${esc(d.title)}</h1><div class="reader-meta"><span>SPUN Learning Team</span><span>${Number(d.minutes) || 0} menit baca</span></div><p class="reader-lead">${esc(d.description)}</p>${previewSections(d.sections)}<p class="sample-note">Pratinjau draft — peserta baru melihatnya setelah Publish.</p></article></div></div>`, 'full');
+          showModal('Pratinjau artikel — tampilan peserta', `<div class="preview-stage"><div class="page-narrow"><article class="article-reader page-card"><div class="modal-kicker">${esc(d.category)}</div><h1>${esc(d.title)}</h1><div class="reader-meta"><span>SPUN Learning Team</span><span>${Number(d.minutes) || 0} menit baca</span></div><p class="reader-lead">${esc(d.description)}</p>${previewSections(d.sections) + previewDocs(d.docs)}<p class="sample-note">Pratinjau draft — peserta baru melihatnya setelah Publish.</p></article></div></div>`, 'full');
           break;
         case 'invite': inviteDialog(); break;
         case 'onb-filter': onbFilter = b.dataset.f; renderOnboarding(onbData); break;

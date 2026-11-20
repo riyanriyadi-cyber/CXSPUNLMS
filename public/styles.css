@@ -274,3 +274,20 @@ dialog{border:1px solid #e8eae2;border-radius:18px;padding:0;max-height:90vh;wid
 .locked-page .done-icon{margin:0 auto 16px}
 .locked-page p{max-width:440px;margin:10px auto 22px}
 @media (max-width:720px){.onb-head{flex-direction:column-reverse;align-items:stretch}.onb-meter{grid-auto-flow:column;justify-content:start;align-items:center}.onb-meter .score-ring{width:84px;height:84px}.onb-step{flex-wrap:wrap}.onb-step .btn{width:100%;justify-content:center}}
+/* ---- v3.8: dokumen terkait ---- */
+.docs-block{margin:30px 0 8px;border-top:1px solid #eceee8;padding-top:22px}
+.docs-block h3{display:flex;align-items:center;gap:8px;font-size:15px;margin:0 0 12px;color:var(--ink)}
+.docs-block h3 .icon{width:17px;height:17px;color:#d16527}
+.doc-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.doc-card{display:flex;flex-wrap:wrap;align-items:center;gap:12px 14px;border:1px solid #e9ece4;border-radius:14px;padding:12px 14px;background:#fff}
+.doc-icon{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:none;font-size:11px;font-weight:800;letter-spacing:.02em;color:var(--doc);background:color-mix(in srgb,var(--doc) 12%,#fff);border:1px solid color-mix(in srgb,var(--doc) 22%,#fff)}
+.doc-main{flex:1;min-width:180px}
+.doc-title{display:block;font-weight:700;font-size:14px;color:var(--ink);text-decoration:none;word-break:break-word}
+.doc-title:hover{color:#d16527}
+.doc-main small{font-size:11.5px;color:#8a9387}
+.doc-actions{display:flex;gap:8px;flex-wrap:wrap}
+.doc-frame{flex-basis:100%;border-radius:10px;overflow:hidden;border:1px solid #e9ece4;background:#f6f7f3}
+.doc-frame iframe{display:block;width:100%;height:min(72vh,640px);border:0}
+.doc-hint{font-size:11.5px;color:#98a091;margin:10px 0 0}
+@media (max-width:720px){.doc-actions{width:100%}.doc-actions .btn{flex:1;justify-content:center}.doc-frame iframe{height:60vh}}
+@media print{.doc-actions,.doc-frame,.doc-hint{display:none}}

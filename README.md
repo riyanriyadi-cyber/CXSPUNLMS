@@ -21,6 +21,7 @@ Browser ──(login, undangan, reset)──▶ Supabase Auth
 - **Peserta** — undang lewat email (termasuk freelancer dengan email pribadi), jadikan admin/peserta, nonaktifkan/aktifkan, kirim ulang undangan, lihat progres per orang.
 - **Nilai Quiz** — matriks skor terbaik semua peserta × semua quiz (✓ = lulus ≥ 80, — = belum mengerjakan), ringkasan per quiz, urutkan per kolom, filter periode/kategori/status/nama, admin disembunyikan secara default, klik judul quiz untuk daftar per quiz (skor terbaik, terakhir, percobaan, status), klik skor untuk membuka raport, unduh CSV.
 - **Quiz essay & Penilaian** — soal bisa *Pilihan ganda* (dinilai otomatis) atau *Essay* (dinilai admin), masing-masing dengan poin sendiri (default PG 1, essay 5). Rubrik/contoh jawaban essay hanya terlihat penilai dan tampil ke peserta sebagai pembahasan setelah dinilai. Percobaan berisi essay berstatus *Menunggu penilaian* sampai admin menilainya di menu **Penilaian** (badge jumlah antrean, nilai kelipatan 0,5, komentar, total skor langsung). Skor = total poin ÷ poin maksimal × 100.
+- **Dokumen terkait** — di setiap artikel dan modul course: *+ Link dokumen* (Google Docs/Sheets/Slides/Forms, file atau folder Drive, PDF, link lain) atau *+ Artikel/course LMS* (pilih dari daftar). Peserta melihat kartu dokumen dengan tombol *Lihat di sini* (pratinjau di dalam halaman, khusus file Google) dan *Buka di tab baru*. Jenis & pratinjau ditentukan server; hanya `https://`. Atur sharing Drive ke "Siapa saja yang memiliki link" agar freelancer bisa membuka.
 - **Onboarding karyawan baru** — menu **Onboarding**: pilih course wajib dan tenggat (default 14 hari, dihitung sejak login pertama). Undangan peserta otomatis *Wajib onboarding* (bisa dimatikan; admin tidak pernah). Selama onboarding, peserta hanya bisa membuka course onboarding dan quiz yang ditautkan ke course itu; materi lain tampil terkunci 🔒 dan ditolak juga oleh API. Selesai = semua modul selesai + semua quiz course itu lulus (≥ 80) → akses penuh terbuka otomatis. Lewat tenggat tidak memblokir, hanya ditandai *Terlambat*. Admin bisa assign peserta lama, *Perpanjang* tenggat, *Buka akses* manual (tercatat), atau *Batalkan*. Peserta lama tidak terpengaruh.
 - **Impor/ekspor quiz** — di daftar Quiz: *Unduh template* (Excel berisi contoh, petunjuk, dan daftar course), *Ekspor semua quiz*, *Impor Excel/CSV*. Satu file bisa berisi banyak quiz; `quiz_id` terisi = ganti seluruh pertanyaan quiz itu, kosong = quiz baru. File dicek dulu (pratinjau + daftar baris yang salah) dan hasilnya disimpan sebagai **draft**.
 - **Laporan** — progres per course, hasil per quiz, unduh CSV peserta.
@@ -51,6 +52,10 @@ Keamanan: HTML dari editor disaring ketat di server (`server/rich.mjs`, daftar i
 | `supabase/migrations/` | Migrasi database — jalankan berurutan |
 | `supabase/seed/catalog.json` | Materi contoh awal (sudah dimasukkan oleh migrasi 2) |
 | `tests/` | Uji API peserta & admin (Postgres in-memory) |
+
+## Upgrade ke v3.8 (dokumen terkait)
+
+Upload isi ZIP ke GitHub, tunggu Vercel deploy, cek `https://DOMAIN/api/auth/config` → `"version":"3.8.0"`. Tidak ada perubahan database. `vercel.json` ikut berubah (CSP `frame-src` untuk pratinjau Google), jadi pastikan file itu ikut ter-upload.
 
 ## Upgrade ke v3.7 (onboarding)
 

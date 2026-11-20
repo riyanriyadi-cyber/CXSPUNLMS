@@ -262,3 +262,12 @@ a.sc:hover{outline:2px solid #f7c9a6}
 .check-row small{display:block;font-weight:400;color:#7a8478;margin-top:2px}
 @media (max-width:720px){.onb-assign{width:100%}.onb-assign select{flex:1;max-width:none}}
 .check-row[hidden]{display:none!important}
+/* ---- v3.8: dokumen terkait ---- */
+.ed-docs{margin-top:18px;border-top:1px dashed #e3e7dd;padding-top:14px}
+.ed-docs .ed-subhead small{font-weight:400;color:#98a091;font-size:11.5px;margin-left:6px}
+.ed-doc{display:grid;grid-template-columns:2fr 1fr auto;gap:10px;align-items:start;background:#fbfcfa;border:1px solid #e9ece4;border-radius:11px;padding:10px 12px;margin-bottom:8px}
+.ed-doc .ed-tools{display:flex;gap:4px;padding-top:22px}
+.doc-detect{color:#5f8f6c}
+.ed-doc-add{display:flex;gap:8px;flex-wrap:wrap}
+.ed-doc-note{font-size:11.5px;color:#8a5220;background:#fff6ec;border:1px solid #f6dcc3;border-radius:9px;padding:8px 12px;margin:10px 0 0;line-height:1.6}
+@media (max-width:720px){.ed-doc{grid-template-columns:1fr}.ed-doc .ed-tools{padding-top:0}}

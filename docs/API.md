@@ -96,6 +96,8 @@ Semua endpoint `/api/admin/*` butuh akun dengan `role = 'admin'` (dicek di datab
 
 Onboarding (peserta): `state.onboarding = {required, status, active, startedAt, dueAt, daysLeft, completedAt, manual, done, total, courses: [{id, title, lessonsDone, lessonsTotal, quizzes: [{id, best, passed, pending}], done}]}`. Saat `active`, `/api/catalog` menandai materi lain `locked: true` tanpa isi, dan enroll/selesai modul/baca artikel/kirim quiz di luar onboarding ditolak 403. Undangan: `POST /api/admin/users/invite` menerima `onboarding` (default true untuk peserta).
 
+Dokumen terkait (artikel `docs`, modul `lessons[].docs`, maks. 20): kirim `{title, url}` atau `{title, ref: "article:<id>" | "course:<id>"}`; server menyimpan `type` (`doc`, `sheet`, `slides`, `form`, `drive`, `folder`, `pdf`, `link`, `article`, `course`) dan `preview` (URL pratinjau, hanya untuk docs.google.com/drive.google.com). Baris tanpa link tidak ikut tayang.
+
 Format soal quiz: pilihan ganda `{type:"mc", q, options[2–6], answer, why, points=1}`, essay `{type:"essay", q, points=5, rubric}`.
 
 Format bagian (section) modul/artikel: `{heading, html, image?: {url, alt, caption}, video?: {youtubeId, title}}`. `html` disaring server (tag: p, br, strong, em, u, s, span, a, ul, ol, li, blockquote, hr, table, img; style: text-align, font-family terbatas, font-size 13/18/22px, color, background-color). Format lama `body` (teks biasa) tetap diterima dan dikonversi otomatis. Saat menyimpan, `video` boleh dikirim sebagai `{url: "<link YouTube>"}`. URL gambar harus dari bucket `lms-media` proyek ini.
