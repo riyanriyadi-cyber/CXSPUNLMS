@@ -4,6 +4,8 @@ import {randomUUID} from 'node:crypto';
 import {json, fail, sql, protectMutation, bodyJSON, HttpError} from './http.mjs';
 import {KINDS, ID_RE, normalize, forPublish, slugify, mediaPrefix} from './content.mjs';
 import {buildRaport, parsePeriod} from './raport.mjs';
+import {loadCatalog} from './catalog.mjs';
+import {onboardingOverview, saveSettings, updateUserOnboarding} from './onboarding.mjs';
 
 const iso = v => v == null ? null : v instanceof Date ? v.toISOString() : String(v);
 const parseJson = v => typeof v === 'string' ? JSON.parse(v) : v;
@@ -37,6 +39,7 @@ async function userList(db) {
   const rows = await sql(db, `SELECT au.id, au.email, au.created_at, au.last_sign_in_at,
       COALESCE(u.name, au.raw_user_meta_data->>'full_name', split_part(au.email,'@',1)) AS name,
       COALESCE(u.role,'learner') AS role, COALESCE(u.status,'active') AS status,
+      COALESCE(u.onboarding_required,false) AS ob_required, u.onboarding_started_at AS ob_started, u.onboarding_due_at AS ob_due, u.onboarding_completed_at AS ob_done,
       (SELECT count(*) FROM enrollments e WHERE e.user_id=au.id) AS courses_enrolled,
       (SELECT count(*) FROM lesson_progress p WHERE p.user_id=au.id) AS lessons_completed,
       (SELECT count(DISTINCT quiz_id) FROM quiz_attempts a WHERE a.user_id=au.id AND a.score>=80) AS quizzes_passed,
@@ -47,6 +50,7 @@ async function userList(db) {
     id: r.id, name: r.name, email: r.email, role: r.role,
     status: r.status === 'disabled' ? 'disabled' : r.last_sign_in_at ? 'active' : 'invited',
     createdAt: iso(r.created_at), lastSignInAt: iso(r.last_sign_in_at), lastActivity: iso(r.last_activity),
+    onboarding: !r.ob_required ? null : r.ob_done ? 'completed' : !r.ob_started ? 'not_started' : Date.now() > Date.parse(iso(r.ob_due)) ? 'overdue' : 'active',
     coursesEnrolled: Number(r.courses_enrolled), lessonsCompleted: Number(r.lessons_completed), quizzesPassed: Number(r.quizzes_passed)
   }));
 }
@@ -140,9 +144,25 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
       if (!EMAIL_RE.test(email) || email.length > 254) fail(422, 'Email tidak valid.');
       if (!NAME_RE.test(name)) fail(422, 'Isi nama 2–80 karakter.');
       if (await sql(db, 'SELECT 1 AS x FROM auth.users WHERE lower(email)=?', email).first()) fail(409, 'Email ini sudah terdaftar.');
+      const onboarding = role === 'learner' && body.onboarding !== false;
       const {id} = await admin.invite(email, {name, redirectTo: origin + '/'});
-      await sql(db, 'INSERT INTO users(id,name,email,role,created_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role', id, name, email, role, new Date().toISOString()).run();
+      await sql(db, 'INSERT INTO users(id,name,email,role,created_at,onboarding_required) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role, onboarding_required=excluded.onboarding_required', id, name, email, role, new Date().toISOString(), onboarding).run();
       return json({ok: true, users: await userList(db)}, 201);
+    }
+    // ---------- Onboarding ----------
+    if (path === '/api/admin/onboarding' && method === 'GET') return json(await onboardingOverview(db, await loadCatalog(db)));
+    if (path === '/api/admin/onboarding/settings' && method === 'POST') {
+      const body = await bodyJSON(request);
+      const ids = (await sql(db, "SELECT id FROM content_items WHERE kind='course'").all()).results.map(r => r.id);
+      await saveSettings(db, body, ids, user.id);
+      return json(await onboardingOverview(db, await loadCatalog(db)));
+    }
+    if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/onboarding$/)) && method === 'POST') {
+      const body = await bodyJSON(request);
+      const u = await authUser(db, m[1]);
+      await ensureRow(db, u);
+      await updateUserOnboarding(db, u.id, body, user.id);
+      return json(await onboardingOverview(db, await loadCatalog(db)));
     }
     if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/raport$/)) && method === 'GET') {
       const u = await authUser(db, m[1]);

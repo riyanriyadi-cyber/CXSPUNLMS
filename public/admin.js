@@ -25,7 +25,7 @@
   const LEVELS = [['Fundamental', 'Fundamental'], ['Intermediate', 'Intermediate'], ['Advanced', 'Advanced']];
   const STATUS = {draft: ['Draft', 'st-draft'], published: ['Tayang', 'st-live'], changed: ['Tayang · ada perubahan', 'st-changed']};
   const USTATUS = {active: ['Aktif', 'st-live'], invited: ['Menunggu aktivasi', 'st-changed'], disabled: ['Nonaktif', 'st-off']};
-  const NAV = [['content/course', 'Course'], ['content/quiz', 'Quiz'], ['content/article', 'Artikel'], ['users', 'Peserta'], ['scores', 'Nilai Quiz'], ['grading', 'Penilaian'], ['report', 'Laporan']];
+  const NAV = [['content/course', 'Course'], ['content/quiz', 'Quiz'], ['content/article', 'Artikel'], ['users', 'Peserta'], ['onboarding', 'Onboarding'], ['scores', 'Nilai Quiz'], ['grading', 'Penilaian'], ['report', 'Laporan']];
   let pendingCount = 0;
 
   let items = [];          // ringkasan konten
@@ -119,6 +119,7 @@
       else if (page === 'users') {editor = null; nav('users'); await renderUsers();}
       else if (page === 'raport' && a) {editor = null; nav('users'); await renderAdminRaport(a);}
       else if (page === 'scores') {editor = null; nav('scores'); await (a ? renderQuizScores(decodeURIComponent(a)) : renderScores());}
+      else if (page === 'onboarding') {editor = null; nav('onboarding'); await renderOnboarding();}
       else if (page === 'grading') {editor = null; nav('grading'); await (a && b ? renderGradeForm(a, b) : renderGrading(a === 'graded' ? 'graded' : 'pending'));}
       else if (page === 'report') {editor = null; nav('report'); await renderReport();}
       else {editor = null; const k = KIND[a] ? a : 'course'; nav('content/' + k); await renderList(k);}
@@ -343,7 +344,7 @@
     $('#user-rows').innerHTML = list.map(u => {
       const self = u.id === me.id;
       return `<tr><td><button class="row-title linkish" data-act="user-detail" data-id="${u.id}">${esc(u.name)}${self ? ' <small class="you">(kamu)</small>' : ''}</button><small>${esc(u.email)}</small></td>
-        <td>${u.role === 'admin' ? badge(['Admin', 'st-admin']) : 'Peserta'}</td><td>${badge(USTATUS[u.status])}</td>
+        <td>${u.role === 'admin' ? badge(['Admin', 'st-admin']) : 'Peserta'}</td><td>${badge(USTATUS[u.status])}${u.onboarding && u.onboarding !== 'completed' ? `<a class="onb-mini" href="#onboarding">Onboarding · ${OSTATUS[u.onboarding][0]}</a>` : ''}</td>
         <td>${u.lessonsCompleted} modul · ${u.quizzesPassed} quiz lulus</td><td><span class="when">${fmtDate(u.lastActivity || u.lastSignInAt)}</span></td>
         <td class="col-actions"><a class="btn btn-outline" href="#raport/${u.id}">Raport</a>${self ? '' : `
           ${u.status === 'invited' ? `<button class="btn btn-outline" data-act="resend" data-id="${u.id}">Kirim ulang undangan</button>` : ''}
@@ -356,11 +357,13 @@
     showModal('Undang peserta', `<form id="invite-form" class="admin-form">
       <label>Nama lengkap<input name="name" required minlength="2" maxlength="80" autocomplete="off" /></label>
       <label>Email<input name="email" type="email" required maxlength="254" autocomplete="off" placeholder="nama@contoh.com" /><small>Boleh email pribadi untuk freelancer atau staf kontrak.</small></label>
-      <label>Role<select name="role"><option value="learner">Peserta</option><option value="admin">Admin (bisa kelola materi & peserta)</option></select></label>
+      <label>Role<select name="role" id="invite-role"><option value="learner">Peserta</option><option value="admin">Admin (bisa kelola materi & peserta)</option></select></label>
+      <label class="check-row" id="invite-onb"><input type="checkbox" name="onboarding" checked /><span><b>Wajib onboarding</b><small>Untuk karyawan baru: materi lain terkunci sampai course onboarding selesai.</small></span></label>
       <div class="form-error" role="alert"></div>
       <div class="confirm-actions"><button type="button" class="btn btn-outline" data-act="close-modal">Batal</button><button class="btn btn-orange" type="submit">Kirim undangan</button></div></form>`);
+    $('#invite-role').addEventListener('change', e => {$('#invite-onb').hidden = e.target.value === 'admin';});
     $('#invite-form').addEventListener('submit', async e => {
-      e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)), btn = e.target.querySelector('[type=submit]'); btn.disabled = true; btn.textContent = 'Mengirim…';
+      e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)), btn = e.target.querySelector('[type=submit]'); f.onboarding = f.role !== 'admin' && f.onboarding === 'on'; btn.disabled = true; btn.textContent = 'Mengirim…';
       try {const r = await api.post('/api/admin/users/invite', f); users = r.users; closeModal(); renderUserRows(); toast(`Undangan terkirim ke ${f.email}.`);}
       catch (err) {e.target.querySelector('.form-error').textContent = err.message; btn.disabled = false; btn.textContent = 'Kirim undangan';}
     });
@@ -532,6 +535,60 @@
       ...report.users.map(u => [u.name, u.email, u.role === 'admin' ? 'Admin' : 'Peserta', USTATUS[u.status][0], u.coursesEnrolled, u.lessonsCompleted, u.quizzesPassed, u.lastActivity ? fmtDate(u.lastActivity) : '', u.lastSignInAt ? fmtDate(u.lastSignInAt) : ''])];
     const blob = new Blob(['﻿' + rows.map(r => r.map(cell).join(',')).join('\r\n')], {type: 'text/csv;charset=utf-8'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `learning-hub-peserta-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // ---------- onboarding ----------
+  const OSTATUS = {not_started: ['Belum login', 'st-draft'], active: ['Berjalan', 'st-changed'], overdue: ['Terlambat', 'st-late'], completed: ['Selesai', 'st-live'], none: ['Program kosong', 'st-draft']};
+  let onbData = null, onbFilter = 'open';
+  const dayLabel = n => n === 1 ? '1 hari' : `${n} hari`;
+  async function renderOnboarding(data) {
+    onbData = data || await api.get('/api/admin/onboarding');
+    if (!users.length) try {users = (await api.get('/api/admin/users')).users;} catch {}
+    const {settings, courses: cs, people} = onbData, chosen = settings.courses;
+    const counts = {open: people.filter(p => p.status !== 'completed').length, overdue: people.filter(p => p.status === 'overdue').length, completed: people.filter(p => p.status === 'completed').length};
+    const list = people.filter(p => onbFilter === 'all' || (onbFilter === 'open' ? p.status !== 'completed' : p.status === onbFilter));
+    const assignable = users.filter(u => u.role !== 'admin' && !people.some(p => p.id === u.id));
+    const ordered = [...chosen.map(id => cs.find(c => c.id === id)).filter(Boolean), ...cs.filter(c => !chosen.includes(c.id))];
+    main.innerHTML = `<div class="content-fade">${heading('Karyawan baru', 'Onboarding', `Peserta yang di-assign hanya bisa membuka course onboarding sampai semua modul selesai dan quiz-nya lulus (≥ 80). Tenggat ${dayLabel(settings.days)} dihitung sejak login pertama. Lewat tenggat tidak memblokir akses, hanya ditandai Terlambat.`)}
+      <section class="onb-settings"><h2>Course wajib</h2>
+        ${onbData.programTotal ? '' : '<p class="onb-warn">Belum ada course onboarding yang tayang, jadi peserta yang di-assign belum dikunci. Pilih minimal satu course yang sudah di-publish.</p>'}
+        <form id="onb-settings-form"><ol class="onb-course-pick">${ordered.map(c => `<li><label><input type="checkbox" name="course" value="${esc(c.id)}" ${chosen.includes(c.id) ? 'checked' : ''} /><span><b>${esc(c.title)}</b><small>${c.lessons} modul · ${c.quizzes.length ? `quiz wajib lulus: ${c.quizzes.map(q => esc(q.title)).join(', ')}` : 'tanpa quiz'}</small></span></label></li>`).join('') || '<li class="empty-row">Belum ada course yang tayang.</li>'}</ol>
+        <div class="onb-settings-row"><label>Tenggat<span class="grade-num"><input type="number" name="days" min="1" max="90" value="${settings.days}" required /> hari sejak login pertama</span></label><button class="btn btn-orange" type="submit">Simpan pengaturan</button></div>
+        <p class="hint">Urutan mengikuti daftar course. Course yang belum tayang tidak dihitung. Perubahan berlaku langsung untuk peserta yang sedang onboarding.</p></form></section>
+      <section class="onb-people"><div class="onb-people-head"><div class="seg-tabs" role="tablist">${[['open', 'Belum selesai'], ['overdue', 'Terlambat'], ['completed', 'Selesai'], ['all', 'Semua']].map(([k, l]) => `<button type="button" role="tab" class="seg-tab ${onbFilter === k ? 'active' : ''}" aria-selected="${onbFilter === k}" data-act="onb-filter" data-f="${k}">${l}${k !== 'all' && counts[k] ? ` <span class="nav-badge ${k === 'completed' ? 'quiet' : ''}">${counts[k]}</span>` : ''}</button>`).join('')}</div>
+        ${assignable.length ? `<form id="onb-assign-form" class="onb-assign"><select name="user" aria-label="Pilih peserta" required><option value="">Assign peserta yang sudah ada…</option>${assignable.map(u => `<option value="${u.id}">${esc(u.name)} · ${esc(u.email)}</option>`).join('')}</select><button class="btn btn-outline" type="submit">Assign</button></form>` : ''}</div>
+      ${list.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr><th>Peserta</th><th>Status</th><th>Progres</th><th>Tenggat</th><th class="col-actions">Aksi</th></tr></thead><tbody>${list.map(onbRow).join('')}</tbody></table></div>`
+        : `<div class="raport-empty">${people.length ? 'Tidak ada peserta di kategori ini.' : 'Belum ada peserta onboarding. Peserta baru otomatis masuk ke sini saat diundang dengan opsi "Wajib onboarding".'}</div>`}</section></div>`;
+  }
+  function onbRow(p) {
+    const pct = p.total ? Math.round(p.done / p.total * 100) : 0;
+    const detail = p.courses.map(c => `<li class="${c.done ? 'ok' : ''}">${c.done ? '✓' : '○'} ${esc(c.title)} <small>· modul ${c.lessonsDone}/${c.lessonsTotal}${c.quizzes.map(q => ` · quiz ${q.passed ? `lulus (${q.best})` : q.pending ? 'menunggu penilaian' : q.best !== null ? `${q.best}` : 'belum'}`).join('')}</small></li>`).join('');
+    const due = p.status === 'completed' ? `<span class="when">Selesai ${fmtDate(p.completedAt)}${p.manual ? ` · dibuka manual${p.completedBy ? ' oleh ' + esc(p.completedBy) : ''}` : ''}</span>`
+      : p.dueAt ? `<span class="when">${fmtDate(p.dueAt)}</span><small class="${p.status === 'overdue' ? 'hint-bad' : ''}">${p.status === 'overdue' ? `lewat ${dayLabel(Math.abs(p.daysLeft))}` : p.daysLeft <= 0 ? 'hari ini' : `sisa ${dayLabel(p.daysLeft)}`}</small>` : '<small>Mulai dihitung saat login pertama</small>';
+    const open = p.status !== 'completed';
+    return `<tr><td><a class="row-title" href="#raport/${p.id}">${esc(p.name)}</a><small>${esc(p.email)}</small></td><td>${badge(OSTATUS[p.status] || OSTATUS.none)}</td>
+      <td><div class="onb-progress"><b>${p.done}/${p.total}</b> course<div class="mini-track"><span style="width:${pct}%"></span></div></div><details class="onb-detail"><summary>Rincian</summary><ul>${detail}</ul></details></td>
+      <td>${due}</td><td class="col-actions">${open && p.dueAt ? `<button class="btn btn-outline" data-act="onb-extend" data-id="${p.id}">Perpanjang</button>` : ''}${open ? `<button class="btn btn-outline" data-act="onb-unlock" data-id="${p.id}" data-name="${esc(p.name)}">Buka akses</button>` : ''}<button class="btn btn-outline btn-danger-text" data-act="onb-cancel" data-id="${p.id}" data-name="${esc(p.name)}">${open ? 'Batalkan' : 'Hapus dari daftar'}</button></td></tr>`;
+  }
+  async function onbAction(id, body, msg) {
+    try {const r = await api.post(`/api/admin/users/${id}/onboarding`, body); closeModal(); toast(msg); await renderOnboarding(r); users = [];} catch (err) {toast(err.message, true);}
+  }
+  main.addEventListener('submit', async e => {
+    if (e.target.id === 'onb-settings-form') {
+      e.preventDefault(); const f = e.target, btn = f.querySelector('[type=submit]');
+      const body = {courses: [...f.querySelectorAll('[name=course]:checked')].map(x => x.value), days: Number(f.elements.days.value)};
+      btn.disabled = true;
+      try {const r = await api.post('/api/admin/onboarding/settings', body); toast('Pengaturan onboarding disimpan.'); await renderOnboarding(r);} catch (err) {toast(err.message, true); btn.disabled = false;}
+    } else if (e.target.id === 'onb-assign-form') {
+      e.preventDefault(); const id = e.target.elements.user.value; if (!id) return;
+      await onbAction(id, {action: 'assign'}, 'Peserta di-assign ke onboarding. Materi lain terkunci sampai onboarding selesai.');
+    }
+  });
+  function onbExtendDialog(id) {
+    const p = onbData.people.find(x => x.id === id);
+    showModal('Perpanjang tenggat', `<form id="onb-extend-form" class="admin-form"><p>${esc(p.name)} · tenggat sekarang ${fmtDate(p.dueAt)}.</p><label>Tambah<span class="grade-num"><input type="number" name="days" min="1" max="60" value="7" required /> hari</span><small>Jika sudah lewat tenggat, dihitung dari hari ini.</small></label>
+      <div class="confirm-actions"><button type="button" class="btn btn-outline" data-act="close-modal">Batal</button><button class="btn btn-orange" type="submit">Perpanjang</button></div></form>`);
+    $('#onb-extend-form').addEventListener('submit', e => {e.preventDefault(); onbAction(id, {action: 'extend', days: Number(e.target.elements.days.value)}, 'Tenggat diperpanjang.');});
   }
 
   // ---------- penilaian essay ----------
@@ -754,6 +811,10 @@
           showModal('Pratinjau artikel — tampilan peserta', `<div class="preview-stage"><div class="page-narrow"><article class="article-reader page-card"><div class="modal-kicker">${esc(d.category)}</div><h1>${esc(d.title)}</h1><div class="reader-meta"><span>SPUN Learning Team</span><span>${Number(d.minutes) || 0} menit baca</span></div><p class="reader-lead">${esc(d.description)}</p>${previewSections(d.sections)}<p class="sample-note">Pratinjau draft — peserta baru melihatnya setelah Publish.</p></article></div></div>`, 'full');
           break;
         case 'invite': inviteDialog(); break;
+        case 'onb-filter': onbFilter = b.dataset.f; renderOnboarding(onbData); break;
+        case 'onb-extend': onbExtendDialog(b.dataset.id); break;
+        case 'onb-unlock': if (await confirmBox(`Buka akses penuh untuk ${b.dataset.name}? Onboarding dianggap selesai dan semua materi langsung terbuka, meskipun course onboarding belum selesai. Tercatat sebagai dibuka manual atas nama kamu.`, 'Buka akses')) await onbAction(b.dataset.id, {action: 'unlock'}, 'Akses penuh dibuka.'); break;
+        case 'onb-cancel': if (await confirmBox(`Keluarkan ${b.dataset.name} dari onboarding? Peserta langsung mendapat akses penuh dan tidak lagi muncul di daftar onboarding. Progres belajarnya tetap tersimpan.`, 'Keluarkan', true)) await onbAction(b.dataset.id, {action: 'cancel'}, 'Peserta dikeluarkan dari onboarding.'); break;
         case 'user-detail': location.hash = `#raport/${b.dataset.id}`; break;
         case 'set-role': {
           const u = users.find(x => x.id === b.dataset.id), toAdmin = b.dataset.role === 'admin';

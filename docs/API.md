@@ -90,6 +90,12 @@ Semua endpoint `/api/admin/*` butuh akun dengan `role = 'admin'` (dicek di datab
 | GET | /api/admin/export/quizzes | Semua quiz (draft) untuk ekspor |
 | POST | /api/admin/import/quizzes | `{dryRun, quizzes: [{row, id?, title, category, description, minutes, course, questions: [{row, type: "PG"\|"Essay", q, options[], answer: "A"–"F", explanation, points}]}]}` → `{ok, errors[{row,message}], items, summary}`; tanpa error & `dryRun:false` → disimpan sebagai draft (quiz yang ada: seluruh pertanyaan diganti). Maks. 100 quiz, body 4 MiB |
 
+| GET | /api/admin/onboarding | `{settings: {courses, days}, courses, people, programTotal}`; status peserta: `not_started` (belum login), `active`, `overdue`, `completed` |
+| POST | /api/admin/onboarding/settings | `{courses: [courseId...], days: 1–90}` |
+| POST | /api/admin/users/:id/onboarding | `{action: "assign" \| "cancel" \| "extend" \| "unlock", days?}` (extend 1–60 hari, dari tenggat atau hari ini jika sudah lewat) |
+
+Onboarding (peserta): `state.onboarding = {required, status, active, startedAt, dueAt, daysLeft, completedAt, manual, done, total, courses: [{id, title, lessonsDone, lessonsTotal, quizzes: [{id, best, passed, pending}], done}]}`. Saat `active`, `/api/catalog` menandai materi lain `locked: true` tanpa isi, dan enroll/selesai modul/baca artikel/kirim quiz di luar onboarding ditolak 403. Undangan: `POST /api/admin/users/invite` menerima `onboarding` (default true untuk peserta).
+
 Format soal quiz: pilihan ganda `{type:"mc", q, options[2–6], answer, why, points=1}`, essay `{type:"essay", q, points=5, rubric}`.
 
 Format bagian (section) modul/artikel: `{heading, html, image?: {url, alt, caption}, video?: {youtubeId, title}}`. `html` disaring server (tag: p, br, strong, em, u, s, span, a, ul, ol, li, blockquote, hr, table, img; style: text-align, font-family terbatas, font-size 13/18/22px, color, background-color). Format lama `body` (teks biasa) tetap diterima dan dikonversi otomatis. Saat menyimpan, `video` boleh dikirim sebagai `{url: "<link YouTube>"}`. URL gambar harus dari bucket `lms-media` proyek ini.

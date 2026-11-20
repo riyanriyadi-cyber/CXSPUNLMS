@@ -3,6 +3,7 @@ import {json, fail, sql, protectMutation, bodyJSON, HttpError} from './http.mjs'
 import {escapeDeep} from './content.mjs';
 import {loadCatalog} from './catalog.mjs';
 import {buildRaport, parsePeriod} from './raport.mjs';
+import {learnerOnboarding, allowedIds} from './onboarding.mjs';
 export {json, HttpError};
 
 const iso = v => v instanceof Date ? v.toISOString() : String(v);
@@ -11,13 +12,18 @@ const parseJson = v => typeof v === 'string' ? JSON.parse(v) : v;
 export {loadCatalog};
 
 // Versi aman untuk browser: tanpa kunci jawaban/pembahasan, semua teks di-escape.
-export function safeCatalog(catalog) {
+// lock (opsional, saat onboarding aktif): isi materi di luar onboarding tidak dikirim, hanya judul & ringkasannya.
+export function safeCatalog(catalog, lock = null) {
+  const openCourse = id => !lock || lock.courses.has(id), openQuiz = id => !lock || lock.quizzes.has(id);
   return escapeDeep({
-    courses: catalog.courses.map(({version, ...c}) => c),
-    quizzes: catalog.quizzes.map(({version, ...q}) => ({...q, questions: q.questions.map(({q, options, type, points}) => ({q, type: type || 'mc', options: type === 'essay' ? [] : options, points: points || 1}))})),
-    articles: catalog.articles.map(({version, ...a}) => ({...a, publishedAt: version}))
+    courses: catalog.courses.map(({version, ...c}) => openCourse(c.id) ? c : {...c, locked: true, lessons: c.lessons.map(({id, title, duration}) => ({id, title, duration, sections: []}))}),
+    quizzes: catalog.quizzes.map(({version, ...q}) => openQuiz(q.id)
+      ? {...q, questions: q.questions.map(({q, options, type, points}) => ({q, type: type || 'mc', options: type === 'essay' ? [] : options, points: points || 1}))}
+      : {...q, locked: true, questions: q.questions.map(({type, points}) => ({q: '', type: type || 'mc', options: [], points: points || 1}))}),
+    articles: catalog.articles.map(({version, ...a}) => lock ? {...a, publishedAt: version, locked: true, sections: []} : {...a, publishedAt: version})
   });
 }
+const LOCKED = 'Materi ini terbuka setelah onboarding selesai. Selesaikan dulu course onboarding-mu.';
 
 const find = (list, id, message) => list.find(x => x.id === id) || fail(404, message);
 
@@ -77,18 +83,22 @@ export async function api(request, {db, user, origin}) {
     const path = new URL(request.url).pathname, method = request.method;
     protectMutation(request, origin);
     const catalog = await loadCatalog(db);
-    if (path === '/api/catalog' && method === 'GET') return json(safeCatalog(catalog));
+    const onboarding = await learnerOnboarding(db, user.id, catalog), lock = onboarding.active ? allowedIds(onboarding) : null;
+    const stateNow = async () => ({...await learningState(db, user.id, catalog), onboarding: await learnerOnboarding(db, user.id, catalog)});
+    if (path === '/api/catalog' && method === 'GET') return json(safeCatalog(catalog, lock));
     if (path === '/api/me/raport' && method === 'GET') return json(await buildRaport(db, user.id, parsePeriod(new URL(request.url)), catalog));
-    if (path === '/api/me' && method === 'GET') return json({profile: {id: user.id, name: user.name, email: user.email, role: user.role || 'learner'}, state: await learningState(db, user.id, catalog)});
+    if (path === '/api/me' && method === 'GET') return json({profile: {id: user.id, name: user.name, email: user.email, role: user.role || 'learner'}, state: {...await learningState(db, user.id, catalog), onboarding}});
     let m;
     const now = new Date().toISOString();
     if (method === 'POST' && (m = path.match(/^\/api\/courses\/([a-z0-9-]+)\/enroll$/))) {
       find(catalog.courses, m[1], 'Course tidak ditemukan.'); await bodyJSON(request);
+      if (lock && !lock.courses.has(m[1])) fail(403, LOCKED);
       await sql(db, 'INSERT INTO enrollments(user_id,course_id,created_at) VALUES(?,?,?) ON CONFLICT DO NOTHING', user.id, m[1], now).run();
     } else if (method === 'POST' && (m = path.match(/^\/api\/courses\/([a-z0-9-]+)\/lessons\/(\d+)\/complete$/))) {
       const c = find(catalog.courses, m[1], 'Course tidak ditemukan.'), data = await bodyJSON(request);
       const lesson = typeof data.lessonId === 'string' ? c.lessons.find(l => l.id === data.lessonId) : c.lessons[Number(m[2])];
       if (!lesson) fail(404, 'Modul tidak ditemukan. Muat ulang halaman.');
+      if (lock && !lock.courses.has(c.id)) fail(403, LOCKED);
       await db.batch([
         sql(db, 'INSERT INTO enrollments(user_id,course_id,created_at) VALUES(?,?,?) ON CONFLICT DO NOTHING', user.id, c.id, now),
         sql(db, 'INSERT INTO lesson_progress(user_id,course_id,lesson_id,completed_at) VALUES(?,?,?,?) ON CONFLICT DO NOTHING', user.id, c.id, lesson.id, now)
@@ -101,9 +111,11 @@ export async function api(request, {db, user, origin}) {
       else await sql(db, 'DELETE FROM bookmarks WHERE user_id=? AND kind=? AND content_id=?', user.id, data.kind, data.id).run();
     } else if (method === 'POST' && (m = path.match(/^\/api\/articles\/([a-z0-9-]+)\/read$/))) {
       find(catalog.articles, m[1], 'Artikel tidak ditemukan.'); await bodyJSON(request);
+      if (lock) fail(403, LOCKED);
       await sql(db, 'INSERT INTO article_reads(user_id,article_id,read_at) VALUES(?,?,?) ON CONFLICT DO NOTHING', user.id, m[1], now).run();
     } else if (method === 'POST' && (m = path.match(/^\/api\/quizzes\/([a-z0-9-]+)\/attempts$/))) {
       const q = find(catalog.quizzes, m[1], 'Quiz tidak ditemukan.'), data = await bodyJSON(request, 256 * 1024);
+      if (lock && !lock.quizzes.has(q.id)) fail(403, LOCKED);
       if (typeof data.attemptId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.attemptId)) fail(422, 'ID percobaan tidak valid.');
       const validAnswer = (v, question) => question.type === 'essay'
         ? typeof v === 'string' && v.trim().length > 0 && v.length <= 5000
@@ -122,13 +134,13 @@ export async function api(request, {db, user, origin}) {
         user.id, data.attemptId, q.id, score, hasEssay ? 'pending' : 'graded', maxPoints, mcEarned, JSON.stringify(data.answers), JSON.stringify(review), q.version, now).run();
       const record = await sql(db, 'SELECT * FROM quiz_attempts WHERE user_id=? AND attempt_id=?', user.id, data.attemptId).first();
       if (record.quiz_id !== q.id || record.answers !== JSON.stringify(data.answers)) fail(409, 'ID percobaan telah digunakan untuk jawaban yang berbeda.');
-      return json({result: attemptResult(record), state: await learningState(db, user.id, catalog)});
+      return json({result: attemptResult(record), state: await stateNow()});
     } else if (method === 'GET' && (m = path.match(/^\/api\/quizzes\/([a-z0-9-]+)\/attempts$/))) {
       const q = find(catalog.quizzes, m[1], 'Quiz tidak ditemukan.');
       const records = await sql(db, 'SELECT * FROM quiz_attempts WHERE user_id=? AND quiz_id=? ORDER BY created_at DESC LIMIT 50', user.id, q.id).all();
       return json({attempts: records.results.map(attemptResult)});
     } else fail(404, 'Endpoint tidak ditemukan.');
-    return json({state: await learningState(db, user.id, catalog)});
+    return json({state: await stateNow()});
   } catch (error) {
     if (!(error instanceof HttpError)) console.error('Learning API error:', error.message);
     return json({error: error instanceof HttpError ? error.message : 'Server mengalami kendala. Coba lagi.'}, error.status || 500);

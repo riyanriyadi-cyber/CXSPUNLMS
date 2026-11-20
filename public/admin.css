@@ -227,3 +227,38 @@ a.sc:hover{outline:2px solid #f7c9a6}
 .import-errors ul{margin:6px 0 0;padding-left:18px}
 .admin-head-actions{flex-wrap:wrap}
 @media (max-width:720px){.ed-row,.grade-inputs{grid-template-columns:1fr}.grade-bar{flex-direction:column;align-items:stretch}}
+/* ---- v3.7: onboarding ---- */
+.st-late{background:#fbe4de;color:#a63b26}
+.nav-badge.quiet{background:#cfd8cc;color:#3e4b43}
+.onb-settings,.onb-people{background:#fff;border:1px solid #e9ece4;border-radius:16px;padding:20px 22px;margin-bottom:18px}
+.onb-settings h2{font-size:15px;margin:0 0 12px}
+.onb-warn{background:#fff6ec;border:1px solid #f6dcc3;color:#8a5220;border-radius:10px;padding:10px 14px;font-size:12.5px;margin:0 0 12px}
+.onb-course-pick{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
+.onb-course-pick label{display:flex;gap:10px;align-items:flex-start;border:1px solid #e9ece4;border-radius:11px;padding:11px 13px;cursor:pointer;font-size:13px}
+.onb-course-pick label:has(input:checked){border-color:#f3a46d;background:#fffaf4}
+.onb-course-pick input{margin-top:3px;accent-color:#e8732a}
+.onb-course-pick small{display:block;color:#7a8478;font-size:11.5px;margin-top:3px;line-height:1.5}
+.onb-settings-row{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-top:16px;flex-wrap:wrap}
+.onb-settings-row label{display:grid;gap:6px;font-size:12px;font-weight:600;color:#4b564e}
+.onb-settings-row input{width:76px;border:1px solid #dfe4d8;border-radius:9px;padding:8px 10px;font:inherit}
+.onb-settings .hint{font-size:11.5px;color:#98a091;margin:10px 0 0}
+.onb-people-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.onb-people-head .seg-tabs{margin:0;border:0}
+.seg-tabs button.seg-tab{background:none;border:0;border-bottom:2px solid transparent;cursor:pointer;font:inherit;font-size:13px;font-weight:600}
+.seg-tabs button.seg-tab.active{border-color:#e8732a;color:#1f2b25}
+.onb-assign{display:flex;gap:8px}
+.onb-assign select{border:1px solid #dfe4d8;border-radius:9px;padding:8px 10px;font:inherit;font-size:12.5px;max-width:320px}
+.onb-progress{font-size:12px;color:#5c675f;min-width:120px}
+.mini-track{height:5px;border-radius:9px;background:#eef0ea;margin-top:5px;overflow:hidden}
+.mini-track span{display:block;height:100%;background:#e8732a;border-radius:9px}
+.onb-detail{margin-top:6px;font-size:11.5px}
+.onb-detail summary{cursor:pointer;color:#7a8478}
+.onb-detail ul{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:3px;color:#4b564e}
+.onb-detail li.ok{color:#3c7a4f}
+.onb-detail small{color:#98a091}
+.onb-mini{display:block;margin-top:5px;font-size:11px;color:#a35a14;text-decoration:none}
+.check-row{display:flex!important;flex-direction:row!important;gap:10px;align-items:flex-start;background:#fffaf4;border:1px solid #f3e1cf;border-radius:10px;padding:10px 12px}
+.check-row input{margin-top:3px;accent-color:#e8732a;width:auto}
+.check-row small{display:block;font-weight:400;color:#7a8478;margin-top:2px}
+@media (max-width:720px){.onb-assign{width:100%}.onb-assign select{flex:1;max-width:none}}
+.check-row[hidden]{display:none!important}

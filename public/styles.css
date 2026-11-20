@@ -226,3 +226,51 @@ dialog{border:1px solid #e8eae2;border-radius:18px;padding:0;max-height:90vh;wid
 .outline-quiz .outline-dot{background:#fff0e5;color:#d16527}
 .rich [data-youtube-video]{position:relative;aspect-ratio:16/9;margin:16px 0;border-radius:10px;overflow:hidden;background:#1d2622}
 .rich [data-youtube-video] iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+/* ---- v3.7: onboarding ---- */
+.onb-panel{background:linear-gradient(135deg,#fff7ef,#fff 62%);border:1px solid #f3dfcb;border-radius:22px;padding:26px 28px;margin-bottom:22px}
+.onb-panel.overdue{background:linear-gradient(135deg,#fdf1ee,#fff 62%);border-color:#f2d2c9}
+.onb-head{display:flex;gap:24px;justify-content:space-between;align-items:flex-start}
+.onb-head h2{font-size:22px;line-height:1.35;margin:8px 0 6px;color:var(--ink);max-width:560px}
+.onb-head p{font-size:13px;line-height:1.7;color:#6b7568;max-width:560px;margin:0}
+.onb-meter{display:grid;justify-items:center;gap:10px;flex:none}
+.onb-meter .score-ring{width:112px;height:112px}
+.onb-meter .score-ring strong{font-size:22px}
+.onb-meter .score-ring span{font-size:10px}
+.onb-deadline{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#4c6b5a;background:#eef4ee;border-radius:999px;padding:5px 11px}
+.onb-deadline .icon{width:14px;height:14px}
+.onb-deadline.soon{color:#a2541c;background:#fff0e5}
+.onb-deadline.late{color:#a63b26;background:#fbe4de}
+.onb-late-note{display:flex;gap:8px;align-items:center;font-size:12px;color:#8e3423;margin:14px 0 0}
+.onb-late-note .icon{width:15px;height:15px;flex:none}
+.onb-steps{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:10px}
+.onb-step{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid #ece6dd;border-radius:14px;padding:13px 16px}
+.onb-step.done{background:#f6faf5;border-color:#d9e8d6}
+.onb-dot{width:26px;height:26px;border-radius:50%;border:2px solid #e3c9b1;display:grid;place-items:center;flex:none;color:#fff}
+.onb-step.done .onb-dot{background:#5f8f6c;border-color:#5f8f6c}
+.onb-dot .icon{width:14px;height:14px}
+.onb-step-body{flex:1;min-width:0}
+.onb-step-title{font-weight:700;font-size:14px;color:var(--ink);text-decoration:none}
+.onb-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.onb-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#6b7568;background:#f3f4ef;border-radius:999px;padding:3px 9px}
+.onb-chip .icon{width:12px;height:12px}
+.onb-chip.ok{color:#2f6b40;background:#e6f2e7}
+.onb-chip.wait{color:#a2541c;background:#fff0e5}
+.onb-done-label{font-size:12px;font-weight:700;color:#3c7a4f}
+.onb-banner{display:flex;align-items:center;gap:10px;margin:0 0 4px;padding:10px 16px;border-radius:12px;background:#fff6ec;border:1px solid #f3dfcb;color:#7d4a1d;font-size:12.5px;text-decoration:none}
+.onb-banner.late{background:#fdf1ee;border-color:#f2d2c9;color:#8e3423}
+.onb-banner .icon{width:16px;height:16px;flex:none}
+.onb-banner-cta{margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-weight:700}
+#onb-banner-slot:empty{display:none}
+#onb-banner-slot{padding:20px 36px 0;width:100%;max-width:1600px;margin:0 auto;box-sizing:border-box}
+#onb-banner-slot:not(:empty)+main{padding-top:16px}
+@media (max-width:720px){#onb-banner-slot{padding:14px 16px 0}}
+@media print{#onb-banner-slot{display:none}}
+.lock-tag{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:#7a8478;background:#f1f2ed;border-radius:999px;padding:6px 11px}
+.lock-tag .icon{width:13px;height:13px}
+.course-card.locked .course-art,.article-card.locked .course-art{filter:grayscale(.55) opacity(.75)}
+.course-card.locked .course-title,.article-card.locked h3 a{color:#5c675f}
+.quiz-card.locked{opacity:.78}
+.locked-page{text-align:center}
+.locked-page .done-icon{margin:0 auto 16px}
+.locked-page p{max-width:440px;margin:10px auto 22px}
+@media (max-width:720px){.onb-head{flex-direction:column-reverse;align-items:stretch}.onb-meter{grid-auto-flow:column;justify-content:start;align-items:center}.onb-meter .score-ring{width:84px;height:84px}.onb-step{flex-wrap:wrap}.onb-step .btn{width:100%;justify-content:center}}

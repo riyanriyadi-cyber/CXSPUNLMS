@@ -12583,9 +12583,9 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
   function toBuffer(q) {
     if (q.parameters.length >= 65534)
       throw Errors.generic("MAX_PARAMETERS_EXCEEDED", "Max number of parameters (65534) exceeded");
-    return q.options.simple ? bytes_default().Q().str(q.statement.string + bytes_default.N).end() : q.describeFirst ? Buffer.concat([describe(q), Flush]) : q.prepare ? q.prepared ? prepared(q) : Buffer.concat([describe(q), prepared(q)]) : unnamed(q);
+    return q.options.simple ? bytes_default().Q().str(q.statement.string + bytes_default.N).end() : q.describeFirst ? Buffer.concat([describe2(q), Flush]) : q.prepare ? q.prepared ? prepared(q) : Buffer.concat([describe2(q), prepared(q)]) : unnamed(q);
   }
-  function describe(q) {
+  function describe2(q) {
     return Buffer.concat([
       Parse(q.statement.string, q.parameters, q.statement.types, q.statement.name),
       Describe("S", q.statement.name)
@@ -23639,16 +23639,157 @@ async function buildRaport(db, userId, period, catalog) {
   };
 }
 
-// server/core.mjs
-var iso3 = (v) => v instanceof Date ? v.toISOString() : String(v);
+// server/onboarding.mjs
+var DAY = 864e5;
+var DEFAULT_DAYS = 14;
+var iso3 = (v) => v == null ? null : v instanceof Date ? v.toISOString() : String(v);
 var parseJson2 = (v) => typeof v === "string" ? JSON.parse(v) : v;
-function safeCatalog(catalog) {
+async function getSettings(db) {
+  const row = await sql(db, "SELECT value FROM app_settings WHERE key='onboarding'").first();
+  const v = row ? parseJson2(row.value) : {};
+  return { courses: Array.isArray(v.courses) ? v.courses.filter((x) => typeof x === "string") : [], days: Number.isInteger(v.days) ? v.days : DEFAULT_DAYS };
+}
+async function saveSettings(db, body, catalogIds, userId) {
+  if (!Array.isArray(body.courses) || body.courses.length > 30) fail(422, "Pilih maksimal 30 course.");
+  const courses = [...new Set(body.courses)];
+  if (courses.some((id) => typeof id !== "string" || !catalogIds.includes(id))) fail(422, "Ada course yang tidak ditemukan. Muat ulang halaman.");
+  const days = Number(body.days);
+  if (!Number.isInteger(days) || days < 1 || days > 90) fail(422, "Tenggat harus 1\u201390 hari.");
+  await sql(
+    db,
+    "INSERT INTO app_settings(key,value,updated_at,updated_by) VALUES('onboarding',?::jsonb,now(),?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=now(), updated_by=excluded.updated_by",
+    JSON.stringify({ courses, days }),
+    userId
+  ).run();
+  return { courses, days };
+}
+function program(settings, catalog) {
+  return settings.courses.map((id) => catalog.courses.find((c) => c.id === id)).filter(Boolean).map((c) => ({ id: c.id, title: c.title, lessons: c.lessons.map((l) => l.id), quizzes: catalog.quizzes.filter((q) => q.course === c.id).map((q) => ({ id: q.id, title: q.title })) }));
+}
+function evaluate(prog, progress, best, pending) {
+  const courses = prog.map((c) => {
+    const lessonsDone = c.lessons.filter((id) => progress[c.id]?.has(id)).length;
+    const quizzes = c.quizzes.map((q) => ({ id: q.id, title: q.title, best: best[q.id] ?? null, passed: (best[q.id] ?? -1) >= 80, pending: (pending[q.id] || 0) > 0 }));
+    return { id: c.id, title: c.title, lessonsDone, lessonsTotal: c.lessons.length, quizzes, done: lessonsDone === c.lessons.length && quizzes.every((q) => q.passed) };
+  });
+  return { courses, done: courses.filter((c) => c.done).length, total: courses.length };
+}
+function describe(row, ev, now = Date.now()) {
+  const required = !!row.onboarding_required;
+  const completedAt = iso3(row.onboarding_completed_at), dueAt = iso3(row.onboarding_due_at), startedAt = iso3(row.onboarding_started_at);
+  const status2 = !required ? "none" : completedAt ? "completed" : !ev.total ? "none" : !startedAt ? "not_started" : now > Date.parse(dueAt) ? "overdue" : "active";
+  return {
+    required,
+    status: status2,
+    active: status2 === "active" || status2 === "overdue",
+    startedAt,
+    dueAt,
+    completedAt,
+    manual: !!(completedAt && row.onboarding_completed_by),
+    daysLeft: dueAt && !completedAt ? Math.ceil((Date.parse(dueAt) - now) / DAY) : null,
+    ...ev
+  };
+}
+async function learnerOnboarding(db, userId, catalog) {
+  const row = await sql(db, "SELECT onboarding_required,onboarding_started_at,onboarding_due_at,onboarding_completed_at,onboarding_completed_by FROM users WHERE id=?", userId).first();
+  if (!row?.onboarding_required) return { required: false, status: "none", active: false };
+  const settings = await getSettings(db), prog = program(settings, catalog);
+  if (!row.onboarding_completed_at && prog.length && !row.onboarding_started_at) {
+    const start = /* @__PURE__ */ new Date(), due = new Date(start.getTime() + settings.days * DAY);
+    await sql(db, "UPDATE users SET onboarding_started_at=?, onboarding_due_at=? WHERE id=? AND onboarding_started_at IS NULL", start.toISOString(), due.toISOString(), userId).run();
+    Object.assign(row, { onboarding_started_at: start.toISOString(), onboarding_due_at: due.toISOString() });
+  }
+  let ev = { courses: [], done: 0, total: prog.length };
+  if (prog.length) {
+    const [p, a] = await Promise.all([
+      sql(db, "SELECT course_id,lesson_id FROM lesson_progress WHERE user_id=?", userId).all(),
+      sql(db, "SELECT quiz_id,score,status FROM quiz_attempts WHERE user_id=?", userId).all()
+    ]);
+    const progress = {}, best = {}, pending = {};
+    for (const r of p.results) (progress[r.course_id] ||= /* @__PURE__ */ new Set()).add(r.lesson_id);
+    for (const r of a.results) r.status === "pending" ? pending[r.quiz_id] = (pending[r.quiz_id] || 0) + 1 : best[r.quiz_id] = Math.max(best[r.quiz_id] ?? 0, r.score);
+    ev = evaluate(prog, progress, best, pending);
+    if (!row.onboarding_completed_at && ev.done === ev.total) {
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      await sql(db, "UPDATE users SET onboarding_completed_at=?, onboarding_completed_by=NULL WHERE id=? AND onboarding_completed_at IS NULL", now, userId).run();
+      row.onboarding_completed_at = now;
+      row.onboarding_completed_by = null;
+    }
+  }
+  return describe(row, ev);
+}
+function allowedIds(onb) {
+  return { courses: new Set(onb.courses.map((c) => c.id)), quizzes: new Set(onb.courses.flatMap((c) => c.quizzes.map((q) => q.id))) };
+}
+async function onboardingOverview(db, catalog) {
+  const settings = await getSettings(db), prog = program(settings, catalog);
+  const rows = (await sql(db, `SELECT u.id,u.name,u.email,u.onboarding_required,u.onboarding_started_at,u.onboarding_due_at,u.onboarding_completed_at,u.onboarding_completed_by,
+      cb.name AS completed_by_name, au.last_sign_in_at
+    FROM users u LEFT JOIN users cb ON cb.id=u.onboarding_completed_by LEFT JOIN auth.users au ON au.id=u.id
+    WHERE u.onboarding_required ORDER BY u.onboarding_completed_at NULLS FIRST, u.onboarding_due_at NULLS LAST, lower(u.name)`).all()).results;
+  const progress = {}, best = {}, pending = {};
+  if (rows.length && prog.length) {
+    const [p, a] = await Promise.all([
+      sql(db, "SELECT p.user_id,p.course_id,p.lesson_id FROM lesson_progress p JOIN users u ON u.id=p.user_id WHERE u.onboarding_required").all(),
+      sql(db, "SELECT a.user_id,a.quiz_id,a.score,a.status FROM quiz_attempts a JOIN users u ON u.id=a.user_id WHERE u.onboarding_required").all()
+    ]);
+    for (const r of p.results) ((progress[r.user_id] ||= {})[r.course_id] ||= /* @__PURE__ */ new Set()).add(r.lesson_id);
+    for (const r of a.results) {
+      if (r.status === "pending") {
+        const x = pending[r.user_id] ||= {};
+        x[r.quiz_id] = (x[r.quiz_id] || 0) + 1;
+      } else {
+        const x = best[r.user_id] ||= {};
+        x[r.quiz_id] = Math.max(x[r.quiz_id] ?? 0, r.score);
+      }
+    }
+  }
+  const people = [];
+  for (const r of rows) {
+    const ev = evaluate(prog, progress[r.id] || {}, best[r.id] || {}, pending[r.id] || {});
+    if (!r.onboarding_completed_at && r.onboarding_started_at && prog.length && ev.done === ev.total) {
+      r.onboarding_completed_at = (/* @__PURE__ */ new Date()).toISOString();
+      r.onboarding_completed_by = null;
+      await sql(db, "UPDATE users SET onboarding_completed_at=?, onboarding_completed_by=NULL WHERE id=? AND onboarding_completed_at IS NULL", r.onboarding_completed_at, r.id).run();
+    }
+    people.push({ id: r.id, name: r.name, email: r.email, signedIn: !!r.last_sign_in_at, completedBy: r.onboarding_completed_by ? r.completed_by_name : null, ...describe(r, ev) });
+  }
+  const courses = catalog.courses.map((c) => ({ id: c.id, title: c.title, lessons: c.lessons.length, quizzes: catalog.quizzes.filter((q) => q.course === c.id).map((q) => ({ id: q.id, title: q.title })) }));
+  return { settings, courses, people, programTotal: prog.length };
+}
+async function updateUserOnboarding(db, targetId, body, adminId) {
+  const action = body.action;
+  if (action === "assign") {
+    await sql(db, "UPDATE users SET onboarding_required=true, onboarding_started_at=NULL, onboarding_due_at=NULL, onboarding_completed_at=NULL, onboarding_completed_by=NULL WHERE id=?", targetId).run();
+  } else if (action === "cancel") {
+    await sql(db, "UPDATE users SET onboarding_required=false WHERE id=?", targetId).run();
+  } else if (action === "extend") {
+    const days = Number(body.days);
+    if (!Number.isInteger(days) || days < 1 || days > 60) fail(422, "Perpanjangan 1\u201360 hari.");
+    const row = await sql(db, "SELECT onboarding_required,onboarding_due_at,onboarding_completed_at FROM users WHERE id=?", targetId).first();
+    if (!row?.onboarding_required || row.onboarding_completed_at) fail(409, "Peserta ini tidak sedang onboarding.");
+    if (!row.onboarding_due_at) fail(409, "Tenggat baru mulai dihitung saat peserta login pertama kali.");
+    const base = Math.max(Date.parse(iso3(row.onboarding_due_at)), Date.now());
+    await sql(db, "UPDATE users SET onboarding_due_at=? WHERE id=?", new Date(base + days * DAY).toISOString(), targetId).run();
+  } else if (action === "unlock") {
+    const row = await sql(db, "SELECT onboarding_required,onboarding_completed_at FROM users WHERE id=?", targetId).first();
+    if (!row?.onboarding_required || row.onboarding_completed_at) fail(409, "Peserta ini tidak sedang onboarding.");
+    await sql(db, "UPDATE users SET onboarding_completed_at=now(), onboarding_completed_by=? WHERE id=?", adminId, targetId).run();
+  } else fail(422, "Aksi tidak dikenal.");
+}
+
+// server/core.mjs
+var iso4 = (v) => v instanceof Date ? v.toISOString() : String(v);
+var parseJson3 = (v) => typeof v === "string" ? JSON.parse(v) : v;
+function safeCatalog(catalog, lock = null) {
+  const openCourse = (id) => !lock || lock.courses.has(id), openQuiz = (id) => !lock || lock.quizzes.has(id);
   return escapeDeep({
-    courses: catalog.courses.map(({ version, ...c }) => c),
-    quizzes: catalog.quizzes.map(({ version, ...q }) => ({ ...q, questions: q.questions.map(({ q: q2, options, type, points }) => ({ q: q2, type: type || "mc", options: type === "essay" ? [] : options, points: points || 1 })) })),
-    articles: catalog.articles.map(({ version, ...a }) => ({ ...a, publishedAt: version }))
+    courses: catalog.courses.map(({ version, ...c }) => openCourse(c.id) ? c : { ...c, locked: true, lessons: c.lessons.map(({ id, title, duration }) => ({ id, title, duration, sections: [] })) }),
+    quizzes: catalog.quizzes.map(({ version, ...q }) => openQuiz(q.id) ? { ...q, questions: q.questions.map(({ q: q2, options, type, points }) => ({ q: q2, type: type || "mc", options: type === "essay" ? [] : options, points: points || 1 })) } : { ...q, locked: true, questions: q.questions.map(({ type, points }) => ({ q: "", type: type || "mc", options: [], points: points || 1 })) }),
+    articles: catalog.articles.map(({ version, ...a }) => lock ? { ...a, publishedAt: version, locked: true, sections: [] } : { ...a, publishedAt: version })
   });
 }
+var LOCKED = "Materi ini terbuka setelah onboarding selesai. Selesaikan dulu course onboarding-mu.";
 var find2 = (list, id, message) => list.find((x) => x.id === id) || fail(404, message);
 async function learningState(db, userId, catalog) {
   const [p, e, b2, r, a] = await Promise.all([
@@ -23678,7 +23819,7 @@ async function learningState(db, userId, catalog) {
     }
     if (!has(catalog.quizzes, row.quiz_id)) continue;
     const prev = results[row.quiz_id];
-    results[row.quiz_id] = { score: Math.max(prev?.score || 0, row.score), lastScore: row.score, attempts: (prev?.attempts || 0) + 1, date: iso3(row.created_at) };
+    results[row.quiz_id] = { score: Math.max(prev?.score || 0, row.score), lastScore: row.score, attempts: (prev?.attempts || 0) + 1, date: iso4(row.created_at) };
   }
   return {
     version: 3,
@@ -23694,7 +23835,7 @@ async function learningState(db, userId, catalog) {
 }
 function attemptResult(record) {
   const pending = record.status === "pending";
-  const review = parseJson2(record.review).map((r) => r.type === "essay" ? (({ rubric, ...rest }) => pending ? rest : { ...rest, why: rubric || "" })(r) : r);
+  const review = parseJson3(record.review).map((r) => r.type === "essay" ? (({ rubric, ...rest }) => pending ? rest : { ...rest, why: rubric || "" })(r) : r);
   return escapeDeep({
     id: record.attempt_id,
     status: record.status || "graded",
@@ -23706,11 +23847,11 @@ function attemptResult(record) {
     essays: review.filter((r) => r.type === "essay").length,
     earnedPoints: record.earned_points === null || record.earned_points === void 0 ? null : Number(record.earned_points),
     maxPoints: record.max_points ?? null,
-    answers: parseJson2(record.answers),
+    answers: parseJson3(record.answers),
     review,
     quizId: record.quiz_id,
-    createdAt: iso3(record.created_at),
-    gradedAt: record.graded_at ? iso3(record.graded_at) : null
+    createdAt: iso4(record.created_at),
+    gradedAt: record.graded_at ? iso4(record.graded_at) : null
   });
 }
 async function api(request, { db, user, origin }) {
@@ -23719,19 +23860,23 @@ async function api(request, { db, user, origin }) {
     const path = new URL(request.url).pathname, method = request.method;
     protectMutation(request, origin);
     const catalog = await loadCatalog(db);
-    if (path === "/api/catalog" && method === "GET") return json(safeCatalog(catalog));
+    const onboarding = await learnerOnboarding(db, user.id, catalog), lock = onboarding.active ? allowedIds(onboarding) : null;
+    const stateNow = async () => ({ ...await learningState(db, user.id, catalog), onboarding: await learnerOnboarding(db, user.id, catalog) });
+    if (path === "/api/catalog" && method === "GET") return json(safeCatalog(catalog, lock));
     if (path === "/api/me/raport" && method === "GET") return json(await buildRaport(db, user.id, parsePeriod(new URL(request.url)), catalog));
-    if (path === "/api/me" && method === "GET") return json({ profile: { id: user.id, name: user.name, email: user.email, role: user.role || "learner" }, state: await learningState(db, user.id, catalog) });
+    if (path === "/api/me" && method === "GET") return json({ profile: { id: user.id, name: user.name, email: user.email, role: user.role || "learner" }, state: { ...await learningState(db, user.id, catalog), onboarding } });
     let m;
     const now = (/* @__PURE__ */ new Date()).toISOString();
     if (method === "POST" && (m = path.match(/^\/api\/courses\/([a-z0-9-]+)\/enroll$/))) {
       find2(catalog.courses, m[1], "Course tidak ditemukan.");
       await bodyJSON(request);
+      if (lock && !lock.courses.has(m[1])) fail(403, LOCKED);
       await sql(db, "INSERT INTO enrollments(user_id,course_id,created_at) VALUES(?,?,?) ON CONFLICT DO NOTHING", user.id, m[1], now).run();
     } else if (method === "POST" && (m = path.match(/^\/api\/courses\/([a-z0-9-]+)\/lessons\/(\d+)\/complete$/))) {
       const c = find2(catalog.courses, m[1], "Course tidak ditemukan."), data = await bodyJSON(request);
       const lesson = typeof data.lessonId === "string" ? c.lessons.find((l) => l.id === data.lessonId) : c.lessons[Number(m[2])];
       if (!lesson) fail(404, "Modul tidak ditemukan. Muat ulang halaman.");
+      if (lock && !lock.courses.has(c.id)) fail(403, LOCKED);
       await db.batch([
         sql(db, "INSERT INTO enrollments(user_id,course_id,created_at) VALUES(?,?,?) ON CONFLICT DO NOTHING", user.id, c.id, now),
         sql(db, "INSERT INTO lesson_progress(user_id,course_id,lesson_id,completed_at) VALUES(?,?,?,?) ON CONFLICT DO NOTHING", user.id, c.id, lesson.id, now)
@@ -23745,9 +23890,11 @@ async function api(request, { db, user, origin }) {
     } else if (method === "POST" && (m = path.match(/^\/api\/articles\/([a-z0-9-]+)\/read$/))) {
       find2(catalog.articles, m[1], "Artikel tidak ditemukan.");
       await bodyJSON(request);
+      if (lock) fail(403, LOCKED);
       await sql(db, "INSERT INTO article_reads(user_id,article_id,read_at) VALUES(?,?,?) ON CONFLICT DO NOTHING", user.id, m[1], now).run();
     } else if (method === "POST" && (m = path.match(/^\/api\/quizzes\/([a-z0-9-]+)\/attempts$/))) {
       const q = find2(catalog.quizzes, m[1], "Quiz tidak ditemukan."), data = await bodyJSON(request, 256 * 1024);
+      if (lock && !lock.quizzes.has(q.id)) fail(403, LOCKED);
       if (typeof data.attemptId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.attemptId)) fail(422, "ID percobaan tidak valid.");
       const validAnswer = (v, question) => question.type === "essay" ? typeof v === "string" && v.trim().length > 0 && v.length <= 5e3 : Number.isInteger(v) && v >= 0 && v < question.options.length;
       if (!Array.isArray(data.answers) || data.answers.length !== q.questions.length || data.answers.some((v, i) => !validAnswer(v, q.questions[i]))) fail(422, "Jawab semua pertanyaan (essay maksimal 5.000 karakter). Jika quiz baru diperbarui, muat ulang halaman.");
@@ -23777,13 +23924,13 @@ async function api(request, { db, user, origin }) {
       ).run();
       const record = await sql(db, "SELECT * FROM quiz_attempts WHERE user_id=? AND attempt_id=?", user.id, data.attemptId).first();
       if (record.quiz_id !== q.id || record.answers !== JSON.stringify(data.answers)) fail(409, "ID percobaan telah digunakan untuk jawaban yang berbeda.");
-      return json({ result: attemptResult(record), state: await learningState(db, user.id, catalog) });
+      return json({ result: attemptResult(record), state: await stateNow() });
     } else if (method === "GET" && (m = path.match(/^\/api\/quizzes\/([a-z0-9-]+)\/attempts$/))) {
       const q = find2(catalog.quizzes, m[1], "Quiz tidak ditemukan.");
       const records = await sql(db, "SELECT * FROM quiz_attempts WHERE user_id=? AND quiz_id=? ORDER BY created_at DESC LIMIT 50", user.id, q.id).all();
       return json({ attempts: records.results.map(attemptResult) });
     } else fail(404, "Endpoint tidak ditemukan.");
-    return json({ state: await learningState(db, user.id, catalog) });
+    return json({ state: await stateNow() });
   } catch (error) {
     if (!(error instanceof HttpError)) console.error("Learning API error:", error.message);
     return json({ error: error instanceof HttpError ? error.message : "Server mengalami kendala. Coba lagi." }, error.status || 500);
@@ -23792,8 +23939,8 @@ async function api(request, { db, user, origin }) {
 
 // server/admin.mjs
 import { randomUUID } from "node:crypto";
-var iso4 = (v) => v == null ? null : v instanceof Date ? v.toISOString() : String(v);
-var parseJson3 = (v) => typeof v === "string" ? JSON.parse(v) : v;
+var iso5 = (v) => v == null ? null : v instanceof Date ? v.toISOString() : String(v);
+var parseJson4 = (v) => typeof v === "string" ? JSON.parse(v) : v;
 var EMAIL_RE = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
 var NAME_RE = /^[\p{L}\p{N} .,'()-]{2,80}$/u;
 var IMAGE_TYPES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" };
@@ -23802,7 +23949,7 @@ function status(row) {
   return row.revision > row.published_revision ? "changed" : "published";
 }
 function summary(row) {
-  const d = parseJson3(row.draft);
+  const d = parseJson4(row.draft);
   return {
     kind: row.kind,
     id: row.id,
@@ -23812,8 +23959,8 @@ function summary(row) {
     status: status(row),
     revision: row.revision,
     sortOrder: row.sort_order,
-    updatedAt: iso4(row.updated_at),
-    publishedAt: iso4(row.published_at),
+    updatedAt: iso5(row.updated_at),
+    publishedAt: iso5(row.published_at),
     updatedBy: row.updated_by_name || null
   };
 }
@@ -23822,11 +23969,12 @@ async function getItem(db, kind, id) {
   const row = await sql(db, `SELECT ${CONTENT_COLUMNS} FROM content_items c LEFT JOIN users u ON u.id=c.updated_by WHERE c.kind=? AND c.id=?`, kind, id).first();
   return row || fail(404, "Konten tidak ditemukan.");
 }
-var full = (row) => ({ ...summary(row), draft: parseJson3(row.draft) });
+var full = (row) => ({ ...summary(row), draft: parseJson4(row.draft) });
 async function userList(db) {
   const rows = await sql(db, `SELECT au.id, au.email, au.created_at, au.last_sign_in_at,
       COALESCE(u.name, au.raw_user_meta_data->>'full_name', split_part(au.email,'@',1)) AS name,
       COALESCE(u.role,'learner') AS role, COALESCE(u.status,'active') AS status,
+      COALESCE(u.onboarding_required,false) AS ob_required, u.onboarding_started_at AS ob_started, u.onboarding_due_at AS ob_due, u.onboarding_completed_at AS ob_done,
       (SELECT count(*) FROM enrollments e WHERE e.user_id=au.id) AS courses_enrolled,
       (SELECT count(*) FROM lesson_progress p WHERE p.user_id=au.id) AS lessons_completed,
       (SELECT count(DISTINCT quiz_id) FROM quiz_attempts a WHERE a.user_id=au.id AND a.score>=80) AS quizzes_passed,
@@ -23839,9 +23987,10 @@ async function userList(db) {
     email: r.email,
     role: r.role,
     status: r.status === "disabled" ? "disabled" : r.last_sign_in_at ? "active" : "invited",
-    createdAt: iso4(r.created_at),
-    lastSignInAt: iso4(r.last_sign_in_at),
-    lastActivity: iso4(r.last_activity),
+    createdAt: iso5(r.created_at),
+    lastSignInAt: iso5(r.last_sign_in_at),
+    lastActivity: iso5(r.last_activity),
+    onboarding: !r.ob_required ? null : r.ob_done ? "completed" : !r.ob_started ? "not_started" : Date.now() > Date.parse(iso5(r.ob_due)) ? "overdue" : "active",
     coursesEnrolled: Number(r.courses_enrolled),
     lessonsCompleted: Number(r.lessons_completed),
     quizzesPassed: Number(r.quizzes_passed)
@@ -23856,7 +24005,7 @@ async function ensureRow(db, u) {
 }
 async function publishedCatalogLite(db) {
   const rows = await sql(db, "SELECT kind,id,published FROM content_items WHERE published IS NOT NULL ORDER BY sort_order, created_at, id").all();
-  return rows.results.map((r) => ({ kind: r.kind, id: r.id, ...parseJson3(r.published) }));
+  return rows.results.map((r) => ({ kind: r.kind, id: r.id, ...parseJson4(r.published) }));
 }
 async function adminApi(request, { db, user, origin, config: config2, admin }) {
   try {
@@ -23896,7 +24045,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
         const draft = normalize(kind, body.draft, ctx);
         await sql(db, "UPDATE content_items SET draft=?::jsonb, revision=revision+1, updated_at=now(), updated_by=? WHERE kind=? AND id=?", JSON.stringify(draft), user.id, kind, id).run();
       } else if (action === "publish") {
-        const draft = normalize(kind, parseJson3(row.draft), ctx);
+        const draft = normalize(kind, parseJson4(row.draft), ctx);
         if (kind === "quiz" && draft.course) {
           const course = await sql(db, "SELECT 1 AS x FROM content_items WHERE kind=? AND id=? AND published IS NOT NULL", "course", draft.course).first();
           if (!course) fail(422, "Course terkait quiz ini belum tayang. Publish course-nya dulu atau kosongkan pilihan course.");
@@ -23930,9 +24079,24 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
       if (!EMAIL_RE.test(email) || email.length > 254) fail(422, "Email tidak valid.");
       if (!NAME_RE.test(name)) fail(422, "Isi nama 2\u201380 karakter.");
       if (await sql(db, "SELECT 1 AS x FROM auth.users WHERE lower(email)=?", email).first()) fail(409, "Email ini sudah terdaftar.");
+      const onboarding = role === "learner" && body.onboarding !== false;
       const { id } = await admin.invite(email, { name, redirectTo: origin + "/" });
-      await sql(db, "INSERT INTO users(id,name,email,role,created_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role", id, name, email, role, (/* @__PURE__ */ new Date()).toISOString()).run();
+      await sql(db, "INSERT INTO users(id,name,email,role,created_at,onboarding_required) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role, onboarding_required=excluded.onboarding_required", id, name, email, role, (/* @__PURE__ */ new Date()).toISOString(), onboarding).run();
       return json({ ok: true, users: await userList(db) }, 201);
+    }
+    if (path === "/api/admin/onboarding" && method === "GET") return json(await onboardingOverview(db, await loadCatalog(db)));
+    if (path === "/api/admin/onboarding/settings" && method === "POST") {
+      const body = await bodyJSON(request);
+      const ids = (await sql(db, "SELECT id FROM content_items WHERE kind='course'").all()).results.map((r) => r.id);
+      await saveSettings(db, body, ids, user.id);
+      return json(await onboardingOverview(db, await loadCatalog(db)));
+    }
+    if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/onboarding$/)) && method === "POST") {
+      const body = await bodyJSON(request);
+      const u = await authUser(db, m[1]);
+      await ensureRow(db, u);
+      await updateUserOnboarding(db, u.id, body, user.id);
+      return json(await onboardingOverview(db, await loadCatalog(db)));
     }
     if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/raport$/)) && method === "GET") {
       const u = await authUser(db, m[1]);
@@ -23953,7 +24117,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
       });
       const quizzes = catalog.filter((q) => q.kind === "quiz").map((q) => {
         const x = a.results.find((x2) => x2.quiz_id === q.id);
-        return { id: q.id, title: q.title, best: x ? Number(x.best) : null, attempts: x ? Number(x.attempts) : 0, last: iso4(x?.last) };
+        return { id: q.id, title: q.title, best: x ? Number(x.best) : null, attempts: x ? Number(x.attempts) : 0, last: iso5(x?.last) };
       });
       return json({ user: { id: u.id, name: u.name, email: u.email }, courses, quizzes, articlesRead: Number(r.n) });
     }
@@ -23997,7 +24161,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
         if (!ids.has(r.quiz_id)) continue;
         const u = cells[r.user_id] ||= {}, c = u[r.quiz_id] ||= { best: null, last: null, attempts: 0, pending: 0, lastAt: null };
         c.attempts++;
-        c.lastAt = iso4(r.created_at);
+        c.lastAt = iso5(r.created_at);
         if (r.status === "pending") {
           c.pending++;
           continue;
@@ -24041,12 +24205,12 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
         FROM quiz_attempts a JOIN users u ON u.id=a.user_id LEFT JOIN users g ON g.id=a.graded_by LEFT JOIN content_items ci ON ci.kind='quiz' AND ci.id=a.quiz_id
         WHERE ${graded ? `a.status='graded' AND a.review LIKE '%"type":"essay"%'` : "a.status='pending'"}
         ORDER BY ${graded ? "a.graded_at DESC NULLS LAST" : "a.created_at ASC"} LIMIT 200`).all();
-      return json({ items: rows.results.map((r) => ({ userId: r.user_id, attemptId: r.attempt_id, quizId: r.quiz_id, quizTitle: r.quiz_title, name: r.name, email: r.email, createdAt: iso4(r.created_at), gradedAt: iso4(r.graded_at), score: r.score, status: r.status, grader: r.grader })) });
+      return json({ items: rows.results.map((r) => ({ userId: r.user_id, attemptId: r.attempt_id, quizId: r.quiz_id, quizTitle: r.quiz_title, name: r.name, email: r.email, createdAt: iso5(r.created_at), gradedAt: iso5(r.graded_at), score: r.score, status: r.status, grader: r.grader })) });
     }
     if (m = path.match(/^\/api\/admin\/grading\/([0-9a-f-]{36})\/([0-9a-f-]{36})$/)) {
       const [, uid2, aid] = m;
       const rec = await sql(db, `SELECT a.*,u.name,u.email,g.name AS grader,${QUIZ_TITLE} AS quiz_title FROM quiz_attempts a JOIN users u ON u.id=a.user_id LEFT JOIN users g ON g.id=a.graded_by LEFT JOIN content_items ci ON ci.kind='quiz' AND ci.id=a.quiz_id WHERE a.user_id=? AND a.attempt_id=?`, uid2, aid).first() || fail(404, "Percobaan quiz tidak ditemukan.");
-      const review = parseJson3(rec.review);
+      const review = parseJson4(rec.review);
       if (!review.some((r) => r.type === "essay")) fail(409, "Percobaan ini tidak berisi essay.");
       if (method === "POST") {
         const body = await bodyJSON(request, 128 * 1024);
@@ -24077,15 +24241,15 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
         score: rec.score,
         earnedPoints: rec.earned_points === null ? null : Number(rec.earned_points),
         maxPoints: rec.max_points,
-        createdAt: iso4(rec.created_at),
-        gradedAt: iso4(rec.graded_at),
+        createdAt: iso5(rec.created_at),
+        gradedAt: iso5(rec.graded_at),
         grader: rec.grader,
         review
       } });
     }
     if (path === "/api/admin/export/quizzes" && method === "GET") {
       const rows = await sql(db, "SELECT id,draft,published_at FROM content_items WHERE kind='quiz' ORDER BY sort_order, created_at, id").all();
-      return json({ quizzes: rows.results.map((r) => ({ id: r.id, published: Boolean(r.published_at), ...parseJson3(r.draft) })) });
+      return json({ quizzes: rows.results.map((r) => ({ id: r.id, published: Boolean(r.published_at), ...parseJson4(r.draft) })) });
     }
     if (path === "/api/admin/import/quizzes" && method === "POST") {
       const body = await bodyJSON(request, 4 * 1024 * 1024);
@@ -24103,7 +24267,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
             continue;
           }
         }
-        const base = existing ? parseJson3(existing.draft) : { title: "", category: "", description: "", minutes: 5, color: "peach", course: "", questions: [] };
+        const base = existing ? parseJson4(existing.draft) : { title: "", category: "", description: "", minutes: 5, color: "peach", course: "", questions: [] };
         const pick2 = (v, fallback) => v === void 0 || v === null || String(v).trim() === "" ? fallback : v;
         const draftIn = { ...base, title: pick2(qz.title, base.title), category: pick2(qz.category, base.category), description: pick2(qz.description, base.description), minutes: pick2(qz.minutes, base.minutes), course: pick2(qz.course, base.course) };
         if (!draftIn.title) {
@@ -24213,16 +24377,36 @@ var ESSAY_GRADING = [
   end $$`,
   "create index if not exists attempt_pending_idx on quiz_attempts (created_at) where status = 'pending'"
 ];
+var ONBOARDING = [
+  "alter table users add column if not exists onboarding_required boolean not null default false",
+  "alter table users add column if not exists onboarding_started_at timestamptz",
+  "alter table users add column if not exists onboarding_due_at timestamptz",
+  "alter table users add column if not exists onboarding_completed_at timestamptz",
+  "alter table users add column if not exists onboarding_completed_by uuid references users (id) on delete set null",
+  `create table if not exists app_settings (key text primary key, value jsonb not null, updated_at timestamptz not null default now(), updated_by uuid references users (id) on delete set null)`,
+  "alter table app_settings enable row level security",
+  `do $$ begin
+    if exists (select 1 from pg_roles where rolname = 'anon') then execute 'revoke all on app_settings from anon, authenticated'; end if;
+  end $$`
+];
+var hasColumn = (table, column) => `SELECT 1 AS x FROM pg_attribute WHERE attrelid = to_regclass('${table}') AND attname = '${column}' AND NOT attisdropped`;
+var MIGRATIONS = [
+  { name: "essay & penilaian", check: hasColumn("quiz_attempts", "status"), statements: ESSAY_GRADING },
+  { name: "onboarding", check: hasColumn("users", "onboarding_completed_by") + " AND to_regclass('app_settings') IS NOT NULL", statements: ONBOARDING }
+];
 var checked = /* @__PURE__ */ new WeakMap();
 function ensureSchema(db) {
   let p = checked.get(db);
   if (!p) {
     p = (async () => {
-      const has = await db.prepare("SELECT 1 AS x FROM pg_attribute WHERE attrelid = to_regclass('quiz_attempts') AND attname = 'status' AND NOT attisdropped").first();
-      if (has) return false;
-      await db.batch(ESSAY_GRADING.map((q) => db.prepare(q)));
-      console.warn("Learning Hub: migrasi essay & penilaian diterapkan otomatis.");
-      return true;
+      let applied = 0;
+      for (const m of MIGRATIONS) {
+        if (await db.prepare(m.check).first()) continue;
+        await db.batch(m.statements.map((q) => db.prepare(q)));
+        console.warn(`Learning Hub: migrasi ${m.name} diterapkan otomatis.`);
+        applied++;
+      }
+      return applied > 0;
     })();
     p.catch((e) => {
       checked.delete(db);
@@ -24248,7 +24432,7 @@ async function resolveUser(db, verified) {
   }
   return { id: verified.id, name: row.name, email: row.email, role: row.role, status: row.status };
 }
-var VERSION = "3.6.2";
+var VERSION = "3.7.0";
 function createHandler({ getDb, verifyToken, config: config2, admin }) {
   return async function handle2(request) {
     let response;
