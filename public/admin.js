@@ -876,4 +876,14 @@
   modal.addEventListener('click', e => {if (e.target === modal) closeModal();});
 
   route();
+  // Cek pengaturan keamanan situs yang aktif: pratinjau dokumen Google butuh frame-src docs/drive.google.com (vercel.json v3.8+).
+  (async () => {
+    try {
+      const r = await fetch('/', {cache: 'no-store'}), c = r.headers.get('content-security-policy') || '';
+      if (!c || /frame-src[^;]*docs\.google\.com[^;]*drive\.google\.com|frame-src[^;]*drive\.google\.com[^;]*docs\.google\.com/.test(c)) return;
+      const w = document.createElement('div'); w.className = 'sys-warn'; w.setAttribute('role', 'alert');
+      w.innerHTML = '<b>Pratinjau dokumen Google belum aktif.</b> File <code>vercel.json</code> yang terpasang di Vercel masih versi lama, jadi peserta melihat "This content is blocked". Upload ulang <code>vercel.json</code> dari ZIP terbaru ke GitHub, tunggu deploy selesai, lalu muat ulang halaman ini. Sementara itu peserta tetap bisa membuka dokumen di tab baru.';
+      main.before(w);
+    } catch {}
+  })();
 })();

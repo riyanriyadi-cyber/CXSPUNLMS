@@ -24482,7 +24482,7 @@ async function resolveUser(db, verified) {
   }
   return { id: verified.id, name: row.name, email: row.email, role: row.role, status: row.status };
 }
-var VERSION = "3.8.0";
+var VERSION = "3.9.0";
 function createHandler({ getDb, verifyToken, config: config2, admin }) {
   return async function handle2(request) {
     let response;

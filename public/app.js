@@ -18,7 +18,7 @@
     back:'<path d="M20 12H5m5-5-5 5 5 5"/>',
     calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18M7 14h2M12 14h2M7 17h2"/>',
     clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-    check:'<path d="m5 12 4 4L19 6"/>',lock:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+    check:'<path d="m5 12 4 4L19 6"/>',external:'<path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>',lock:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
     badge:'<circle cx="12" cy="9" r="6"/><path d="m8 14-2 8 6-3 6 3-2-8m-7-5 2 2 3-3"/>',
     trophy:'<path d="M8 3h8v6a4 4 0 0 1-8 0V3Zm0 2H4v3a4 4 0 0 0 5 4m7-7h4v3a4 4 0 0 1-5 4M12 13v6M8 21h8M9 19h6"/>',
     sparkle:'<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3ZM20 2v4m-2-2h4"/>',
@@ -53,14 +53,40 @@
   const DOCT={doc:['Google Docs','#2f6fd6','D'],sheet:['Google Sheets','#1e8e3e','S'],slides:['Google Slides','#d39b00','P'],form:['Google Forms','#7248b9','F'],drive:['File Google Drive','#4c6b5a','▤'],folder:['Folder Google Drive','#4c6b5a','▣'],pdf:['PDF','#c5392b','PDF'],link:['Tautan','#6b7568','↗'],article:['Artikel Knowledge Center','#d16527','A'],course:['Course','#d16527','C']};
   const fileName=u=>{try{const n=decodeURIComponent(new URL(u.replace(/&amp;/g,'&')).pathname.split('/').pop()||'');return /\.[a-z0-9]{2,5}$/i.test(n)?esc(n):'';}catch{return '';}};
   const safePreview=u=>/^https:\/\/(docs|drive)\.google\.com\//.test(u)?u:'';
+  // Alamat cadangan bila pratinjau utama terblokir: penampil Drive untuk Docs/Sheets/Slides.
+  const altPreview=u=>{const m=/^https:\/\/docs\.google\.com\/(?:document|spreadsheets|presentation)\/d\/([A-Za-z0-9_-]{10,})\//.exec(u);return m?`https://drive.google.com/file/d/${m[1]}/preview`:'';};
+  const previewFor=d=>{const raw=(d.url||'').replace(/&amp;/g,'&');if(d.preview)return safePreview(d.preview.replace(/&amp;/g,'&'));if(d.type==='pdf'&&/^https:\/\//.test(raw))return `https://docs.google.com/viewer?url=${encodeURIComponent(raw)}&embedded=true`;return '';};
   function docsHtml(list){
     const rows=(list||[]).map((d,i)=>{const t=DOCT[d.type]||DOCT.link;
       if(d.ref){const [k,rid]=d.ref.split(':'),it=k==='article'?articles.find(a=>a.id===rid):courses.find(c=>c.id===rid);if(!it)return '';
         return `<li class="doc-card"><span class="doc-icon" style="--doc:${t[1]}">${t[2]}</span><div class="doc-main"><a class="doc-title" href="#${k==='article'?'knowledge':'course'}/${rid}">${d.title||it.title}</a><small>${t[0]}${it.locked?' · terbuka setelah onboarding':''}</small></div><a class="btn btn-subtle" href="#${k==='article'?'knowledge':'course'}/${rid}">Buka ${icon('arrow')}</a></li>`;}
-      if(!d.url)return '';const pv=safePreview(d.preview);
-      return `<li class="doc-card"><span class="doc-icon" style="--doc:${t[1]}">${t[2]}</span><div class="doc-main"><a class="doc-title" href="${d.url}" target="_blank" rel="noopener noreferrer">${d.title||fileName(d.url)||t[0]}</a><small>${t[0]}</small></div><div class="doc-actions">${pv?`<button class="btn btn-subtle" data-action="doc-preview" data-src="${pv}" data-title="${d.title||t[0]}" aria-expanded="false">Lihat di sini</button>`:''}<a class="btn btn-outline" href="${d.url}" target="_blank" rel="noopener noreferrer">Buka di tab baru ${icon('arrow')}</a></div><div class="doc-frame" hidden></div></li>`;}).join('');
-    return rows?`<section class="docs-block" aria-label="Dokumen terkait"><h3>${icon('module')} Dokumen terkait</h3><ul class="doc-list">${rows}</ul><p class="doc-hint">Tidak bisa terbuka atau diminta login/akses? Pastikan kamu login dengan akun Google yang punya akses, atau hubungi admin Learning Hub.</p></section>`:'';
+      if(!d.url)return '';const pv=previewFor(d),title=d.title||fileName(d.url)||t[0];
+      const viewAttrs=`data-action="doc-view" data-src="${esc(pv)}" data-url="${d.url}" data-title="${title}" data-type="${d.type}"`;
+      return `<li class="doc-card">${pv?`<button type="button" class="doc-hit" ${viewAttrs} aria-label="Lihat ${title}"></button>`:''}<span class="doc-icon" style="--doc:${t[1]}">${t[2]}</span><div class="doc-main">${pv?`<span class="doc-title">${title}</span>`:`<a class="doc-title" href="${d.url}" target="_blank" rel="noopener noreferrer">${title}</a>`}<small>${t[0]}${pv?'':' · dibuka di tab baru'}</small></div><div class="doc-actions">${pv?`<button type="button" class="btn btn-subtle" ${viewAttrs}>Lihat ${icon('arrow')}</button>`:''}<a class="doc-ext" href="${d.url}" target="_blank" rel="noopener noreferrer" title="Buka di tab baru" aria-label="Buka ${title} di tab baru">${icon('external')}</a></div></li>`;}).join('');
+    return rows?`<section class="docs-block" aria-label="Dokumen terkait"><h3>${icon('module')} Dokumen terkait</h3><ul class="doc-list">${rows}</ul></section>`:'';
   }
+  // ---- Penampil dokumen layar penuh ----
+  let viewer=null;
+  function openViewer(b){
+    closeViewer();const src=safePreview(b.dataset.src);if(!src)return;
+    const t=DOCT[b.dataset.type]||DOCT.link,url=b.dataset.url,title=b.dataset.title;
+    const el=document.createElement('div');el.className='doc-viewer';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label',title);
+    el.innerHTML=`<header class="dv-head"><span class="doc-icon" style="--doc:${t[1]}">${t[2]}</span><div class="dv-title"><b>${esc(title)}</b><small>${t[0]}</small></div><a class="btn btn-outline dv-ext" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${icon('external')}<span>Buka di tab baru</span></a><button type="button" class="dv-close" data-action="doc-close" aria-label="Tutup dokumen">${icon('close')}</button></header><div class="dv-body"><div class="dv-loading">Memuat dokumen…</div><div class="dv-fallback" hidden></div></div><p class="dv-foot">Dokumen tidak muncul atau diminta login? <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Buka di tab baru</a></p>`;
+    const f=document.createElement('iframe');f.src=src;f.title=title;f.allow='fullscreen';f.referrerPolicy='strict-origin-when-cross-origin';f.addEventListener('load',()=>el.querySelector('.dv-loading')?.remove());
+    el.querySelector('.dv-body').prepend(f);document.body.append(el);document.body.classList.add('dv-open');
+    viewer={el,frame:f,alt:altPreview(src),triedAlt:false,url,back:document.activeElement};el.querySelector('.dv-close').focus();
+  }
+  function closeViewer(){if(!viewer)return;const back=viewer.back;viewer.el.remove();viewer=null;document.body.classList.remove('dv-open');back?.focus?.();}
+  function viewerFallback(reason){if(!viewer)return;const box=viewer.el.querySelector('.dv-fallback');viewer.frame.remove();viewer.el.querySelector('.dv-loading')?.remove();
+    const msg=reason==='config'?['Pratinjau belum tersedia di Learning Hub.','Dokumen tetap bisa dibuka di tab baru. Admin sudah mendapat petunjuk perbaikannya di panel admin.']:['Google meminta kamu memilih atau masuk ke akun.','Ini biasanya terjadi jika browser login dengan lebih dari satu akun Google. Buka di tab baru untuk melanjutkan.'];
+    box.innerHTML=`<div class="done-icon">${icon('info')}</div><h2>${msg[0]}</h2><p>${msg[1]}</p><a class="btn btn-orange" href="${esc(viewer.url)}" target="_blank" rel="noopener noreferrer">Buka di tab baru ${icon('external')}</a>`;box.hidden=false;}
+  // Pratinjau diblokir aturan keamanan (CSP frame-src): coba alamat cadangan, lalu tampilkan pesan yang jelas.
+  document.addEventListener('securitypolicyviolation',e=>{if(!viewer||!/^(frame|child)-src/.test(e.effectiveDirective||e.violatedDirective||''))return;
+    const configured=/docs\.google\.com/.test(e.originalPolicy||'');
+    if(configured&&viewer.alt&&!viewer.triedAlt){viewer.triedAlt=true;viewer.frame.src=viewer.alt;return;}
+    viewerFallback(configured?'account':'config');});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&viewer){e.stopPropagation();closeViewer();}},true);
+  window.addEventListener('hashchange',closeViewer);
   // Teks dari server sudah di-escape; kolom html sudah disaring ketat (server/rich.mjs).
   const sectionHtml = s => {
     const paras = (s.body||'').split(/\n{2,}/).filter(p=>p.trim()).map(p=>`<p>${p.replace(/\n/g,'<br>')}</p>`).join('');
@@ -194,7 +220,8 @@
     case 'menu':$('#sidebar').classList.toggle('open');$('#mobile-scrim').classList.toggle('visible');b.setAttribute('aria-expanded',String($('#sidebar').classList.contains('open')));break;
     case 'close':closeModal();break;
     case 'onb-reload':location.reload();break;
-    case 'doc-preview':{const box=b.closest('.doc-card').querySelector('.doc-frame'),open=box.hidden;const src=safePreview(b.dataset.src);if(!src)break;if(open&&!box.firstChild){const f=document.createElement('iframe');f.src=src;f.title=b.dataset.title;f.loading='lazy';f.allow='fullscreen';f.referrerPolicy='strict-origin-when-cross-origin';box.append(f);}box.hidden=!open;b.setAttribute('aria-expanded',String(open));b.textContent=open?'Tutup pratinjau':'Lihat di sini';break;}
+    case 'doc-view':openViewer(b);break;
+    case 'doc-close':closeViewer();break;
     case 'course':go(`course/${id}`);break;
     case 'continue':{const c=courses.find(c=>c.id===id);if(c){const next=c.lessons.findIndex((_,i)=>!(state.progress[id]||[]).includes(i));go(`learn/${id}/${(next<0?0:next)+1}`);}break;}
     case 'lesson':go(`learn/${id}/${index+1}`);break;
