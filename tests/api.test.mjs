@@ -15,7 +15,7 @@ test('Learning Hub API on Postgres', async t => {
   await t.test('config is public and exposes only the publishable key', async () => {
     const c = await call('/api/auth/config');
     assert.equal(c.status, 200);
-    assert.deepEqual(c.data, {mode: 'supabase', version: '3.9.0', registration: false, supabaseUrl: 'https://demo.supabase.co', supabaseKey: 'sb_publishable_demo'});
+    assert.deepEqual(c.data, {mode: 'supabase', version: '4.0.0', registration: false, supabaseUrl: 'https://demo.supabase.co', supabaseKey: 'sb_publishable_demo'});
     assert.match(c.headers.get('content-security-policy'), /connect-src 'self' https:\/\/\*\.supabase\.co/);
   });
   await t.test('anonymous, malformed and unknown tokens are rejected', async () => {

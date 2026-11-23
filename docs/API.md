@@ -96,6 +96,15 @@ Semua endpoint `/api/admin/*` butuh akun dengan `role = 'admin'` (dicek di datab
 
 Onboarding (peserta): `state.onboarding = {required, status, active, startedAt, dueAt, daysLeft, completedAt, manual, done, total, courses: [{id, title, lessonsDone, lessonsTotal, quizzes: [{id, best, passed, pending}], done}]}`. Saat `active`, `/api/catalog` menandai materi lain `locked: true` tanpa isi, dan enroll/selesai modul/baca artikel/kirim quiz di luar onboarding ditolak 403. Undangan: `POST /api/admin/users/invite` menerima `onboarding` (default true untuk peserta).
 
+| GET | /api/admin/teams | `{teams: [{id, name, members, content}]}` |
+| POST | /api/admin/teams | `{name}` → tim baru (id dari nama) |
+| POST | /api/admin/teams/:id | `{name}` ubah nama |
+| POST | /api/admin/teams/:id/delete | hapus (ditolak 409 bila masih dipakai audiens materi atau onboarding) |
+| POST | /api/admin/users/:id/teams | `{teams: [teamId...]}` |
+| GET | /api/admin/report?team=<id> | laporan hanya untuk anggota & materi tim itu |
+
+Tim: setiap materi punya `teams` (kosong = semua tim; quiz dengan `course` mengikuti course). Peserta hanya menerima materi yang cocok; admin menerima semua. Undangan menerima `teams`. Onboarding: `{courses, byTeam: {teamId: [courseId]}, days}`.
+
 Dokumen terkait (artikel `docs`, modul `lessons[].docs`, maks. 20): kirim `{title, url}` atau `{title, ref: "article:<id>" | "course:<id>"}`; server menyimpan `type` (`doc`, `sheet`, `slides`, `form`, `drive`, `folder`, `pdf`, `link`, `article`, `course`) dan `preview` (URL pratinjau, hanya untuk docs.google.com/drive.google.com). Baris tanpa link tidak ikut tayang.
 
 Format soal quiz: pilihan ganda `{type:"mc", q, options[2–6], answer, why, points=1}`, essay `{type:"essay", q, points=5, rubric}`.

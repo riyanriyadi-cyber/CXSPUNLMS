@@ -25,7 +25,7 @@
   const LEVELS = [['Fundamental', 'Fundamental'], ['Intermediate', 'Intermediate'], ['Advanced', 'Advanced']];
   const STATUS = {draft: ['Draft', 'st-draft'], published: ['Tayang', 'st-live'], changed: ['Tayang · ada perubahan', 'st-changed']};
   const USTATUS = {active: ['Aktif', 'st-live'], invited: ['Menunggu aktivasi', 'st-changed'], disabled: ['Nonaktif', 'st-off']};
-  const NAV = [['content/course', 'Course'], ['content/quiz', 'Quiz'], ['content/article', 'Artikel'], ['users', 'Peserta'], ['onboarding', 'Onboarding'], ['scores', 'Nilai Quiz'], ['grading', 'Penilaian'], ['report', 'Laporan']];
+  const NAV = [['content/course', 'Course'], ['content/quiz', 'Quiz'], ['content/article', 'Artikel'], ['users', 'Peserta'], ['teams', 'Tim'], ['onboarding', 'Onboarding'], ['scores', 'Nilai Quiz'], ['grading', 'Penilaian'], ['report', 'Laporan']];
   let pendingCount = 0;
 
   let items = [];          // ringkasan konten
@@ -111,6 +111,7 @@
   let navActive = '';
   async function refreshPending() {try {const {pending} = await api.get('/api/admin/grading/count'); if (pending !== pendingCount) {pendingCount = pending; const t = $('#breadcrumb').textContent; nav(navActive); $('#breadcrumb').textContent = t;}} catch {}}
   async function route() {
+    await ensureTeams().catch(() => {});
     const [page, a, b] = location.hash.slice(1).split('/');
     destroyRtes();
     $('#sidebar').classList.remove('open'); $('#mobile-scrim').classList.remove('visible');
@@ -119,6 +120,7 @@
       else if (page === 'users') {editor = null; nav('users'); await renderUsers();}
       else if (page === 'raport' && a) {editor = null; nav('users'); await renderAdminRaport(a);}
       else if (page === 'scores') {editor = null; nav('scores'); await (a ? renderQuizScores(decodeURIComponent(a)) : renderScores());}
+      else if (page === 'teams') {editor = null; nav('teams'); await renderTeams();}
       else if (page === 'onboarding') {editor = null; nav('onboarding'); await renderOnboarding();}
       else if (page === 'grading') {editor = null; nav('grading'); await (a && b ? renderGradeForm(a, b) : renderGrading(a === 'graded' ? 'graded' : 'pending'));}
       else if (page === 'report') {editor = null; nav('report'); await renderReport();}
@@ -147,7 +149,7 @@
       ${list.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr><th class="col-order">Urutan</th><th>Judul</th><th>Isi</th><th>Status</th><th>Terakhir diubah</th><th class="col-actions">Aksi</th></tr></thead><tbody>
       ${list.map((it, i) => `<tr>
         <td class="col-order"><button class="mini" data-act="move-item" data-id="${esc(it.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="Naikkan">↑</button><button class="mini" data-act="move-item" data-id="${esc(it.id)}" data-dir="1" ${i === list.length - 1 ? 'disabled' : ''} aria-label="Turunkan">↓</button></td>
-        <td><a class="row-title" href="#edit/${kind}/${esc(it.id)}">${esc(it.title)}</a><small>${esc(it.category || 'Tanpa kategori')}</small></td>
+        <td><a class="row-title" href="#edit/${kind}/${esc(it.id)}">${esc(it.title)}</a><small>${esc(it.category || 'Tanpa kategori')}</small><div class="team-chips">${kind === 'quiz' && it.course ? teamChips(items.find(c => c.kind === 'course' && c.id === it.course)?.teams || [], '') : teamChips(it.teams, '')}</div></td>
         <td>${it.count} ${K.unit}</td>
         <td>${badge(STATUS[it.status])}</td>
         <td><span class="when">${fmtDate(it.updatedAt)}</span>${it.updatedBy ? `<small>oleh ${esc(it.updatedBy)}</small>` : ''}</td>
@@ -250,21 +252,28 @@
       ${opts.length < 6 ? `<button type="button" class="btn btn-subtle" data-act="add-option" data-q="${i}">+ Tambah pilihan</button>` : ''}</div>
       ${fText('Pembahasan', `questions.${i}.why`, {rows: 2, max: 2000, hint: 'Ditampilkan ke peserta setelah quiz dikumpulkan.'})}`}</div></details>`;
   }
+  function audienceField(kind, d) {
+    if (kind === 'quiz' && d.course) {const c = items.find(i => i.kind === 'course' && i.id === d.course); return `<div class="aud-field"><span class="ed-label">Untuk tim</span><p class="hint">Mengikuti course terkait${c ? ` "<b>${esc(c.title)}</b>"` : ''}: ${teamChips(c?.teams || [])}. Ubah audiens di course tersebut.</p></div>`;}
+    const sel = d.teams || [];
+    return `<div class="aud-field"><span class="ed-label">Untuk tim</span><div class="aud-choice"><label class="team-check"><input type="radio" name="aud-mode" value="all" data-aud-mode ${sel.length ? '' : 'checked'} /> Semua tim</label><label class="team-check"><input type="radio" name="aud-mode" value="some" data-aud-mode ${sel.length ? 'checked' : ''} ${teamList?.length ? '' : 'disabled'} /> Tim tertentu</label></div>
+      ${sel.length || editor.audSome ? teamChecks('aud-team', sel, {attr: 'data-aud-team'}) : ''}${teamList?.length ? '' : '<p class="hint">Belum ada tim. Buat dulu di menu <a href="#teams">Tim</a>.</p>'}
+      <small class="hint">${kind === 'course' ? 'Quiz yang ditautkan ke course ini ikut mengikuti audiensnya.' : 'Peserta di luar tim yang dipilih tidak melihat materi ini.'}</small></div>`;
+  }
   function renderEditor() {
     destroyRtes();
     const {kind, draft: d, status} = editor, K = KIND[kind];
     let body = '';
     if (kind === 'course') {
-      body = `<section class="ed-card"><h2>Informasi course</h2><div class="form-grid">${fInput('Judul', 'title', {max: 140, cls: 'span-2'})}${fInput('Kategori', 'category', {max: 60, list: 'cat-list'})}${fSelect('Level', 'level', LEVELS)}${fSelect('Warna kartu', 'color', COLORS)}${fSelect('Ilustrasi', 'art', ARTS)}</div>${fText('Deskripsi', 'description', {rows: 2, max: 500})}${catList()}</section>
+      body = `<section class="ed-card"><h2>Informasi course</h2><div class="form-grid">${fInput('Judul', 'title', {max: 140, cls: 'span-2'})}${fInput('Kategori', 'category', {max: 60, list: 'cat-list'})}${fSelect('Level', 'level', LEVELS)}${fSelect('Warna kartu', 'color', COLORS)}${fSelect('Ilustrasi', 'art', ARTS)}</div>${fText('Deskripsi', 'description', {rows: 2, max: 500})}${audienceField(kind, d)}${catList()}</section>
         <section class="ed-card"><div class="ed-card-head"><h2>Modul <span class="count">${d.lessons.length}</span></h2><small>Durasi course dihitung otomatis: ${d.lessons.reduce((n, l) => n + (Number(l.duration) || 0), 0)} menit</small></div>
         ${d.lessons.map((l, i) => lessonCard(l, i, d.lessons.length)).join('')}<button type="button" class="btn btn-subtle" data-act="add-lesson">+ Tambah modul</button></section>`;
     } else if (kind === 'quiz') {
       const courses = items.filter(i => i.kind === 'course');
-      body = `<section class="ed-card"><h2>Informasi quiz</h2><div class="form-grid">${fInput('Judul', 'title', {max: 140, cls: 'span-2'})}${fInput('Kategori', 'category', {max: 60, list: 'cat-list'})}${fInput('Estimasi (menit)', 'minutes', {num: true})}${fSelect('Warna kartu', 'color', COLORS)}${fSelect('Course terkait', 'course', [['', '— Tidak ada —'], ...courses.map(c => [c.id, c.title + (c.status === 'draft' ? ' (belum tayang)' : '')])])}</div>${fText('Deskripsi', 'description', {rows: 2, max: 500})}${catList()}<p class="ed-note">Nilai lulus latihan: 80. Peserta bisa mengulang tanpa batas.</p></section>
+      body = `<section class="ed-card"><h2>Informasi quiz</h2><div class="form-grid">${fInput('Judul', 'title', {max: 140, cls: 'span-2'})}${fInput('Kategori', 'category', {max: 60, list: 'cat-list'})}${fInput('Estimasi (menit)', 'minutes', {num: true})}${fSelect('Warna kartu', 'color', COLORS)}${fSelect('Course terkait', 'course', [['', '— Tidak ada —'], ...courses.map(c => [c.id, c.title + (c.status === 'draft' ? ' (belum tayang)' : '')])], {rerender: true})}</div>${fText('Deskripsi', 'description', {rows: 2, max: 500})}${audienceField(kind, d)}${catList()}<p class="ed-note">Nilai lulus latihan: 80. Peserta bisa mengulang tanpa batas.</p></section>
         <section class="ed-card"><div class="ed-card-head"><h2>Pertanyaan <span class="count">${d.questions.length}</span></h2></div>${d.questions.map((q, i) => questionCard(q, i, d.questions.length)).join('')}<button type="button" class="btn btn-subtle" data-act="add-question">+ Pilihan ganda</button> <button type="button" class="btn btn-subtle" data-act="add-question" data-type="essay">+ Essay</button></section>`;
     } else {
       body = `<section class="ed-card"><h2>Informasi artikel</h2><div class="form-grid">${fInput('Judul', 'title', {max: 140, cls: 'span-2'})}${fInput('Kategori / topik', 'category', {max: 60, list: 'cat-list'})}${fInput('Estimasi baca (menit)', 'minutes', {num: true})}${fSelect('Warna kartu', 'color', COLORS)}${fSelect('Ilustrasi', 'art', ARTS)}</div>${fText('Ringkasan pembuka', 'description', {rows: 2, max: 500})}
-        <label class="check"><input type="checkbox" data-f="featured" data-bool ${d.featured ? 'checked' : ''} /> Jadikan Editor's Pick di Knowledge Center</label>${catList()}</section>
+        <label class="check"><input type="checkbox" data-f="featured" data-bool ${d.featured ? 'checked' : ''} /> Jadikan Editor's Pick di Knowledge Center</label>${audienceField(kind, d)}${catList()}</section>
         <section class="ed-card"><div class="ed-card-head"><h2>Isi artikel</h2></div>${sectionsEditor('sections')}${docsEditor('docs')}<div class="ed-item-foot"><button type="button" class="btn btn-outline" data-act="preview-article">Pratinjau artikel</button></div></section>`;
     }
     main.innerHTML = `<div class="editor content-fade">
@@ -359,40 +368,86 @@
 
   // ---------- peserta ----------
   let userQuery = '';
+  // ---------- tim ----------
+  let teamList = null;
+  async function ensureTeams(force = false) {if (!teamList || force) teamList = (await api.get('/api/admin/teams')).teams; return teamList;}
+  const teamName = id => teamList?.find(t => t.id === id)?.name || id;
+  const teamChips = (ids, empty = 'Semua tim') => ids?.length ? ids.map(id => `<span class="team-chip">${esc(teamName(id))}</span>`).join('') : empty ? `<span class="team-chip all">${empty}</span>` : '';
+  function teamChecks(name, selected = [], {empty = 'Belum ada tim. Buat dulu di menu <a href="#teams">Tim</a>.', attr = ''} = {}) {
+    if (!teamList?.length) return `<p class="hint">${empty}</p>`;
+    return `<div class="team-checks">${teamList.map(t => `<label class="team-check"><input type="checkbox" name="${name}" value="${esc(t.id)}" ${attr} ${selected.includes(t.id) ? 'checked' : ''} /> ${esc(t.name)}</label>`).join('')}</div>`;
+  }
+  const teamOptions = (sel, all = 'Semua tim', withNone = false) => `<option value="">${all}</option>${withNone ? `<option value="__none" ${sel === '__none' ? 'selected' : ''}>Belum punya tim</option>` : ''}${(teamList || []).map(t => `<option value="${esc(t.id)}" ${sel === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}`;
+  async function renderTeams() {
+    const list = await ensureTeams(true);
+    main.innerHTML = `<div class="content-fade">${heading('Kelompok peserta', 'Tim', 'Peserta hanya melihat materi untuk "Semua tim" dan materi untuk timnya sendiri. Satu peserta boleh masuk lebih dari satu tim. Admin selalu melihat semua materi.')}
+      <form id="team-form" class="team-add"><input name="name" maxlength="60" required placeholder="Nama tim baru, mis. Customer Experience" aria-label="Nama tim baru" /><button class="btn btn-orange" type="submit">+ Tambah tim</button></form>
+      ${list.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr><th>Tim</th><th>Anggota</th><th>Materi khusus tim</th><th class="col-actions">Aksi</th></tr></thead><tbody>${list.map(t => `<tr><td><span class="row-title">${esc(t.name)}</span></td><td><a href="#users" data-act="team-members" data-id="${esc(t.id)}">${t.members} peserta</a></td><td>${t.content} materi</td><td class="col-actions"><button class="btn btn-outline" data-act="team-rename" data-id="${esc(t.id)}">Ubah nama</button><button class="btn btn-outline btn-danger-text" data-act="team-delete" data-id="${esc(t.id)}">Hapus</button></td></tr>`).join('')}</tbody></table></div>`
+        : '<div class="raport-empty">Belum ada tim. Tambahkan tim pertama, lalu atur tim peserta di menu Peserta dan audiens materi di editor course/artikel/quiz.</div>'}
+      ${users.length ? (n => n ? `<p class="hint">${n} peserta belum punya tim dan hanya melihat materi "Semua tim". <a href="#users" data-act="team-members" data-id="__none">Lihat daftarnya</a>.</p>` : '')(users.filter(u => u.role !== 'admin' && !u.teams.length).length) : ''}</div>`;
+    if (!users.length) {try {users = (await api.get('/api/admin/users')).users; const n = users.filter(u => u.role !== 'admin' && !u.teams.length).length; if (n && location.hash === '#teams') main.querySelector('.content-fade').insertAdjacentHTML('beforeend', `<p class="hint">${n} peserta belum punya tim dan hanya melihat materi "Semua tim". <a href="#users" data-act="team-members" data-id="__none">Lihat daftarnya</a>.</p>`);} catch {}}
+  }
+  main.addEventListener('submit', async e => {
+    if (e.target.id !== 'team-form') return; e.preventDefault();
+    const btn = e.target.querySelector('[type=submit]'); btn.disabled = true;
+    try {teamList = (await api.post('/api/admin/teams', {name: e.target.elements.name.value})).teams; toast('Tim ditambahkan.'); await renderTeams();} catch (err) {toast(err.message, true); btn.disabled = false;}
+  });
+  function userTeamsDialog(id) {
+    const u = users.find(x => x.id === id); if (!u) return;
+    showModal(`Tim · ${esc(u.name)}`, `<form id="user-teams-form" class="admin-form"><p class="hint">Peserta melihat materi "Semua tim" dan materi untuk tim yang dicentang.</p>${teamChecks('team', u.teams)}
+      <div class="confirm-actions"><button type="button" class="btn btn-outline" data-act="close-modal">Batal</button>${teamList?.length ? '<button class="btn btn-orange" type="submit">Simpan</button>' : ''}</div></form>`);
+    $('#user-teams-form').addEventListener('submit', async e => {
+      e.preventDefault(); const teams = [...e.target.querySelectorAll('[name=team]:checked')].map(x => x.value);
+      try {users = (await api.post(`/api/admin/users/${id}/teams`, {teams})).users; teamList = null; await ensureTeams(); closeModal(); renderUserRows(); toast('Tim peserta disimpan.');} catch (err) {toast(err.message, true);}
+    });
+  }
+  let userTeam = '';
   async function renderUsers() {
     users = (await api.get('/api/admin/users')).users;
     main.innerHTML = `<div class="content-fade">${heading('Kelola akses', 'Peserta', 'Undang karyawan maupun freelancer memakai email apa pun. Peserta menerima email untuk membuat password.', '<button class="btn btn-orange" data-act="invite">+ Undang peserta</button>')}
-      <div class="filters"><label class="filter-search"><input id="user-search" placeholder="Cari nama atau email…" value="${esc(userQuery)}" aria-label="Cari peserta" /></label>
+      <div class="filters"><label class="filter-search"><input id="user-search" placeholder="Cari nama atau email…" value="${esc(userQuery)}" aria-label="Cari peserta" /></label><select id="user-team" aria-label="Filter tim">${teamOptions(userTeam, 'Semua tim', true)}</select>
       <span class="results-count" id="user-count"></span></div>
-      <div class="table-wrap"><table class="admin-table"><thead><tr><th>Peserta</th><th>Role</th><th>Status</th><th>Progres</th><th>Terakhir aktif</th><th class="col-actions">Aksi</th></tr></thead><tbody id="user-rows"></tbody></table></div></div>`;
+      <div class="table-wrap"><table class="admin-table"><thead><tr><th>Peserta</th><th>Tim</th><th>Role</th><th>Status</th><th>Progres</th><th>Terakhir aktif</th><th class="col-actions">Aksi</th></tr></thead><tbody id="user-rows"></tbody></table></div></div>`;
     renderUserRows();
   }
   function renderUserRows() {
-    const q = userQuery.toLowerCase(), list = users.filter(u => `${u.name} ${u.email}`.toLowerCase().includes(q));
+    const q = userQuery.toLowerCase(), list = users.filter(u => `${u.name} ${u.email}`.toLowerCase().includes(q) && (!userTeam || (userTeam === '__none' ? !u.teams.length && u.role !== 'admin' : u.teams.includes(userTeam))));
     $('#user-count').textContent = `${users.length} akun · ${users.filter(u => u.role === 'admin').length} admin`;
     $('#user-rows').innerHTML = list.map(u => {
       const self = u.id === me.id;
       return `<tr><td><button class="row-title linkish" data-act="user-detail" data-id="${u.id}">${esc(u.name)}${self ? ' <small class="you">(kamu)</small>' : ''}</button><small>${esc(u.email)}</small></td>
+        <td>${u.role === 'admin' ? '<span class="team-chip all">Semua materi</span>' : teamChips(u.teams, 'Belum ada tim')}<button class="mini-link" data-act="user-teams" data-id="${u.id}">Atur tim</button></td>
         <td>${u.role === 'admin' ? badge(['Admin', 'st-admin']) : 'Peserta'}</td><td>${badge(USTATUS[u.status])}${u.onboarding && u.onboarding !== 'completed' ? `<a class="onb-mini" href="#onboarding">Onboarding · ${OSTATUS[u.onboarding][0]}</a>` : ''}</td>
         <td>${u.lessonsCompleted} modul · ${u.quizzesPassed} quiz lulus</td><td><span class="when">${fmtDate(u.lastActivity || u.lastSignInAt)}</span></td>
         <td class="col-actions"><a class="btn btn-outline" href="#raport/${u.id}">Raport</a>${self ? '' : `
           ${u.status === 'invited' ? `<button class="btn btn-outline" data-act="resend" data-id="${u.id}">Kirim ulang undangan</button>` : ''}
           <button class="btn btn-outline" data-act="set-role" data-id="${u.id}" data-role="${u.role === 'admin' ? 'learner' : 'admin'}">${u.role === 'admin' ? 'Jadikan peserta' : 'Jadikan admin'}</button>
           <button class="btn btn-outline ${u.status === 'disabled' ? '' : 'btn-danger-text'}" data-act="set-status" data-id="${u.id}" data-status="${u.status === 'disabled' ? 'active' : 'disabled'}">${u.status === 'disabled' ? 'Aktifkan' : 'Nonaktifkan'}</button>`}</td></tr>`;
-    }).join('') || '<tr><td colspan="6" class="empty-row">Tidak ada peserta yang cocok.</td></tr>';
+    }).join('') || '<tr><td colspan="7" class="empty-row">Tidak ada peserta yang cocok.</td></tr>';
   }
   main.addEventListener('input', e => {if (e.target.id === 'user-search') {userQuery = e.target.value; renderUserRows();}});
+  main.addEventListener('change', e => {if (e.target.id === 'user-team') {userTeam = e.target.value; renderUserRows();} else if (e.target.id === 'report-team') {reportTeam = e.target.value; renderReport().catch(err => toast(err.message, true));} else if (e.target.id === 'grading-team') {gradingTeam = e.target.value; renderGrading(gradingTab);}});
+  main.addEventListener('change', e => {
+    if (!editor) return;
+    if (e.target.dataset.audMode !== undefined) {
+      if (e.target.value === 'all') {editor.draft.teams = []; editor.audSome = false;} else editor.audSome = true;
+      markDirty(); renderEditor();
+    } else if (e.target.dataset.audTeam !== undefined) {
+      editor.draft.teams = [...main.querySelectorAll('[data-aud-team]:checked')].map(x => x.value); editor.audSome = true; markDirty();
+    }
+  });
   function inviteDialog() {
     showModal('Undang peserta', `<form id="invite-form" class="admin-form">
       <label>Nama lengkap<input name="name" required minlength="2" maxlength="80" autocomplete="off" /></label>
       <label>Email<input name="email" type="email" required maxlength="254" autocomplete="off" placeholder="nama@contoh.com" /><small>Boleh email pribadi untuk freelancer atau staf kontrak.</small></label>
       <label>Role<select name="role" id="invite-role"><option value="learner">Peserta</option><option value="admin">Admin (bisa kelola materi & peserta)</option></select></label>
+      <fieldset class="team-field"><legend>Tim <small>(opsional, boleh lebih dari satu)</small></legend>${teamChecks('team', userTeam && userTeam !== '__none' ? [userTeam] : [])}</fieldset>
       <label class="check-row" id="invite-onb"><input type="checkbox" name="onboarding" checked /><span><b>Wajib onboarding</b><small>Untuk karyawan baru: materi lain terkunci sampai course onboarding selesai.</small></span></label>
       <div class="form-error" role="alert"></div>
       <div class="confirm-actions"><button type="button" class="btn btn-outline" data-act="close-modal">Batal</button><button class="btn btn-orange" type="submit">Kirim undangan</button></div></form>`);
     $('#invite-role').addEventListener('change', e => {$('#invite-onb').hidden = e.target.value === 'admin';});
     $('#invite-form').addEventListener('submit', async e => {
-      e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)), btn = e.target.querySelector('[type=submit]'); f.onboarding = f.role !== 'admin' && f.onboarding === 'on'; btn.disabled = true; btn.textContent = 'Mengirim…';
+      e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)), btn = e.target.querySelector('[type=submit]'); f.onboarding = f.role !== 'admin' && f.onboarding === 'on'; f.teams = new FormData(e.target).getAll('team'); delete f.team; btn.disabled = true; btn.textContent = 'Mengirim…';
       try {const r = await api.post('/api/admin/users/invite', f); users = r.users; closeModal(); renderUserRows(); toast(`Undangan terkirim ke ${f.email}.`);}
       catch (err) {e.target.querySelector('.form-error').textContent = err.message; btn.disabled = false; btn.textContent = 'Kirim undangan';}
     });
@@ -426,7 +481,7 @@
 
   // ---------- nilai quiz ----------
   let scores = null, scoresKey = null;
-  const sf = {preset: 'all', custom: {}, category: '', status: 'not-disabled', q: '', admins: false, sort: {key: 'name', dir: 1}, qsort: {key: 'best', dir: -1}};
+  const sf = {preset: 'all', custom: {}, category: '', team: '', status: 'not-disabled', q: '', admins: false, sort: {key: 'name', dir: 1}, qsort: {key: 'best', dir: -1}};
   const CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>';
   async function loadScores(force = false) {
     const R = window.HubRaport, r = R.range(sf.preset, sf.custom);
@@ -437,8 +492,9 @@
   }
   const visibleUsers = d => d.users.filter(u => (sf.admins || u.role !== 'admin')
     && (sf.status === 'all' || (sf.status === 'disabled' ? u.status === 'disabled' : u.status !== 'disabled'))
+    && (!sf.team || (sf.team === '__none' ? !(u.teams || []).length : (u.teams || []).includes(sf.team)))
     && `${u.name} ${u.email}`.toLowerCase().includes(sf.q.trim().toLowerCase()));
-  const visibleQuizzes = d => d.quizzes.filter(q => !sf.category || q.category === sf.category);
+  const visibleQuizzes = d => d.quizzes.filter(q => (!sf.category || q.category === sf.category) && (!sf.team || !(q.teams || []).length || (sf.team !== '__none' && q.teams.includes(sf.team))));
   const cellOf = (d, uid, qid) => d.cells[uid]?.[qid] || null;
   const userStats = (d, u, qs) => {const v = qs.map(q => cellOf(d, u.id, q.id)).filter(c => c && c.best !== null); return {done: v.length, passed: v.filter(c => c.best >= 80).length, avg: v.length ? Math.round(v.reduce((s, c) => s + c.best, 0) / v.length) : null};};
   const quizStats = (d, q, us) => {const all = us.map(u => cellOf(d, u.id, q.id)).filter(Boolean), v = all.filter(c => c.best !== null); return {done: all.length, pending: all.filter(c => c.pending).length, passed: v.filter(c => c.best >= 80).length, avg: v.length ? Math.round(v.reduce((s, c) => s + c.best, 0) / v.length) : null, attempts: all.reduce((s, c) => s + c.attempts, 0)};};
@@ -450,6 +506,7 @@
       <label>Periode<select data-sf="preset">${R.PRESETS.map(([v, l]) => `<option value="${v}" ${sf.preset === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <span class="raport-custom" ${sf.preset === 'custom' ? '' : 'hidden'}><label>Dari<input type="date" data-sf="from" value="${esc(sf.custom.from || '')}" /></label><label>Sampai<input type="date" data-sf="to" value="${esc(sf.custom.to || '')}" /></label></span>
       ${withCategory ? `<label>Kategori quiz<select data-sf="category"><option value="">Semua kategori</option>${cats.map(c => `<option value="${esc(c)}" ${sf.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>` : ''}
+      <label>Tim<select data-sf="team">${teamOptions(sf.team, 'Semua tim', true)}</select></label>
       <label>Status akun<select data-sf="status"><option value="not-disabled" ${sf.status === 'not-disabled' ? 'selected' : ''}>Aktif & menunggu aktivasi</option><option value="all" ${sf.status === 'all' ? 'selected' : ''}>Semua</option><option value="disabled" ${sf.status === 'disabled' ? 'selected' : ''}>Nonaktif saja</option></select></label>
       <label class="grow">Cari peserta<input type="search" data-sf="q" value="${esc(sf.q)}" placeholder="Nama atau email…" /></label>
       <label class="inline-check"><input type="checkbox" data-sf="admins" ${sf.admins ? 'checked' : ''} /> Tampilkan admin</label>
@@ -534,24 +591,24 @@
     const day = new Date().toISOString().slice(0, 10), status = u => USTATUS[u.status][0];
     if (location.hash.startsWith('#scores/')) {
       const q = d.quizzes.find(x => x.id === decodeURIComponent(location.hash.split('/')[1])); if (!q) return;
-      saveCsv([['Nama', 'Email', 'Status akun', 'Skor terbaik', 'Skor terakhir', 'Percobaan', 'Status quiz', 'Terakhir dikerjakan'],
-        ...quizRows(d, q).map(u => {const c = cellOf(d, u.id, q.id); return [u.name, u.email, status(u), c?.best ?? '', c?.last ?? '', c?.attempts ?? 0, !c ? 'Belum mengerjakan' : c.best === null ? 'Menunggu penilaian' : c.best >= 80 ? 'Lulus' : 'Belum lulus', c ? fmtDate(c.lastAt) : ''];})], `nilai-${q.id}-${day}.csv`);
+      saveCsv([['Nama', 'Email', 'Tim', 'Status akun', 'Skor terbaik', 'Skor terakhir', 'Percobaan', 'Status quiz', 'Terakhir dikerjakan'],
+        ...quizRows(d, q).map(u => {const c = cellOf(d, u.id, q.id); return [u.name, u.email, (u.teams || []).map(teamName).join('; '), status(u), c?.best ?? '', c?.last ?? '', c?.attempts ?? 0, !c ? 'Belum mengerjakan' : c.best === null ? 'Menunggu penilaian' : c.best >= 80 ? 'Lulus' : 'Belum lulus', c ? fmtDate(c.lastAt) : ''];})], `nilai-${q.id}-${day}.csv`);
     } else {
       const qs = visibleQuizzes(d);
-      saveCsv([['Nama', 'Email', 'Status akun', ...qs.map(q => q.title), 'Quiz lulus', 'Rata-rata skor terbaik'],
-        ...matrixUsers(d, qs).map(u => {const st = userStats(d, u, qs); return [u.name, u.email, status(u), ...qs.map(q => cellOf(d, u.id, q.id)?.best ?? ''), `${st.passed}/${qs.length}`, st.avg ?? ''];})], `nilai-quiz-${day}.csv`);
+      saveCsv([['Nama', 'Email', 'Tim', 'Status akun', ...qs.map(q => q.title), 'Quiz lulus', 'Rata-rata skor terbaik'],
+        ...matrixUsers(d, qs).map(u => {const st = userStats(d, u, qs); return [u.name, u.email, (u.teams || []).map(teamName).join('; '), status(u), ...qs.map(q => cellOf(d, u.id, q.id)?.best ?? ''), `${st.passed}/${qs.length}`, st.avg ?? ''];})], `nilai-quiz-${day}.csv`);
     }
   }
 
   // ---------- laporan ----------
-  let report = null;
+  let report = null, reportTeam = '';
   async function renderReport() {
-    report = await api.get('/api/admin/report');
+    report = await api.get('/api/admin/report' + (reportTeam ? '?team=' + encodeURIComponent(reportTeam) : ''));
     const active30 = report.users.filter(u => u.lastActivity && Date.now() - new Date(u.lastActivity) < 30 * 864e5).length;
     const learners = report.users.filter(u => u.status !== 'disabled').length;
     const avg = report.courses.length ? Math.round(report.courses.reduce((s, c) => s + c.avgProgress, 0) / report.courses.length) : 0;
     const passed = report.quizzes.reduce((s, q) => s + q.passed, 0);
-    main.innerHTML = `<div class="content-fade">${heading('Pantau perkembangan', 'Laporan', `Data per ${fmtDate(report.generatedAt)}. Hanya materi yang sedang tayang yang dihitung.`, '<button class="btn btn-outline" data-act="csv">Unduh CSV peserta</button>')}
+    main.innerHTML = `<div class="content-fade">${heading('Pantau perkembangan', 'Laporan', `Data per ${fmtDate(report.generatedAt)}. Hanya materi yang sedang tayang yang dihitung.`, `<select id="report-team" aria-label="Filter tim">${teamOptions(reportTeam)}</select><button class="btn btn-outline" data-act="csv">Unduh CSV peserta</button>`)}
       <section class="stats-grid">${[['Akun aktif', learners, 'termasuk yang belum aktivasi'], ['Aktif 30 hari terakhir', active30, 'menyelesaikan modul atau quiz'], ['Rata-rata progres course', avg + '%', 'dari peserta yang mengikuti'], ['Quiz lulus', passed, 'kombinasi peserta × quiz, skor ≥ 80']].map(([l, v, n]) => `<div class="stat-card"><div><div class="stat-label">${l}</div><div class="stat-value">${v}</div><div class="stat-trend">${n}</div></div></div>`).join('')}</section>
       <h2 class="report-h">Course</h2><div class="table-wrap"><table class="admin-table"><thead><tr><th>Course</th><th>Modul</th><th>Diikuti</th><th>Selesai</th><th>Rata-rata progres</th></tr></thead><tbody>
       ${report.courses.map(c => `<tr><td>${esc(c.title)}</td><td>${c.lessons}</td><td>${c.enrolled}</td><td>${c.completed}</td><td><div class="progress-row inline"><div class="progress-track"><span style="width:${c.avgProgress}%"></span></div><b>${c.avgProgress}%</b></div></td></tr>`).join('') || '<tr><td colspan="5" class="empty-row">Belum ada course tayang.</td></tr>'}</tbody></table></div>
@@ -560,28 +617,40 @@
   }
   function downloadCsv() {
     const cell = v => {const s = String(v ?? ''); return /[",\n;]/.test(s) || /^[=+\-@]/.test(s) ? `"${(/^[=+\-@]/.test(s) ? "'" : '') + s.replace(/"/g, '""')}"` : s;};
-    const rows = [['Nama', 'Email', 'Role', 'Status', 'Course diikuti', 'Modul selesai', 'Quiz lulus', 'Terakhir aktif', 'Terakhir login'],
-      ...report.users.map(u => [u.name, u.email, u.role === 'admin' ? 'Admin' : 'Peserta', USTATUS[u.status][0], u.coursesEnrolled, u.lessonsCompleted, u.quizzesPassed, u.lastActivity ? fmtDate(u.lastActivity) : '', u.lastSignInAt ? fmtDate(u.lastSignInAt) : ''])];
+    const rows = [['Nama', 'Email', 'Tim', 'Role', 'Status', 'Course diikuti', 'Modul selesai', 'Quiz lulus', 'Terakhir aktif', 'Terakhir login'],
+      ...report.users.map(u => [u.name, u.email, (u.teams || []).map(teamName).join('; '), u.role === 'admin' ? 'Admin' : 'Peserta', USTATUS[u.status][0], u.coursesEnrolled, u.lessonsCompleted, u.quizzesPassed, u.lastActivity ? fmtDate(u.lastActivity) : '', u.lastSignInAt ? fmtDate(u.lastSignInAt) : ''])];
     const blob = new Blob(['﻿' + rows.map(r => r.map(cell).join(',')).join('\r\n')], {type: 'text/csv;charset=utf-8'});
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `learning-hub-peserta-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `learning-hub-peserta${reportTeam ? '-' + reportTeam : ''}-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
   // ---------- onboarding ----------
   const OSTATUS = {not_started: ['Belum login', 'st-draft'], active: ['Berjalan', 'st-changed'], overdue: ['Terlambat', 'st-late'], completed: ['Selesai', 'st-live'], none: ['Program kosong', 'st-draft']};
-  let onbData = null, onbFilter = 'open';
+  let onbData = null, onbFilter = 'open', onbScope = '', onbDraft = null;
+  main.addEventListener('change', e => {
+    if (e.target.dataset?.onbCourse === undefined || !onbDraft) return;
+    const ids = [...main.querySelectorAll('[data-onb-course]:checked:not(:disabled)')].map(x => x.value);
+    if (onbScope) onbDraft.byTeam[onbScope] = ids; else onbDraft.courses = ids;
+    const days = main.querySelector('#onb-settings-form [name=days]')?.value; renderOnboarding(onbData).then(() => {if (days) main.querySelector('#onb-settings-form [name=days]').value = days;});
+  });
   const dayLabel = n => n === 1 ? '1 hari' : `${n} hari`;
   async function renderOnboarding(data) {
     onbData = data || await api.get('/api/admin/onboarding');
     if (!users.length) try {users = (await api.get('/api/admin/users')).users;} catch {}
-    const {settings, courses: cs, people} = onbData, chosen = settings.courses;
+    const {settings, courses: cs, people} = onbData;
+    if (!data || !onbDraft) onbDraft = {courses: [...settings.courses], byTeam: structuredClone(settings.byTeam || {})};
+    if (onbScope && !teamList?.some(t => t.id === onbScope)) onbScope = '';
+    const chosen = onbScope ? onbDraft.byTeam[onbScope] || [] : onbDraft.courses;
+    const visible = c => !onbScope || !c.teams.length || c.teams.includes(onbScope);
     const counts = {open: people.filter(p => p.status !== 'completed').length, overdue: people.filter(p => p.status === 'overdue').length, completed: people.filter(p => p.status === 'completed').length};
     const list = people.filter(p => onbFilter === 'all' || (onbFilter === 'open' ? p.status !== 'completed' : p.status === onbFilter));
     const assignable = users.filter(u => u.role !== 'admin' && !people.some(p => p.id === u.id));
     const ordered = [...chosen.map(id => cs.find(c => c.id === id)).filter(Boolean), ...cs.filter(c => !chosen.includes(c.id))];
+    const scopeTabs = teamList?.length ? `<div class="seg-tabs onb-scope" role="tablist">${[['', 'Semua tim'], ...teamList.map(t => [t.id, t.name])].map(([k, l]) => {const n = k ? (onbDraft.byTeam[k] || []).length : onbDraft.courses.length; return `<button type="button" role="tab" class="seg-tab ${onbScope === k ? 'active' : ''}" aria-selected="${onbScope === k}" data-act="onb-scope" data-f="${esc(k)}">${esc(l)}${n ? ` <span class="nav-badge quiet">${n}</span>` : ''}</button>`;}).join('')}</div>
+      <p class="hint">${onbScope ? `Course tambahan khusus anggota <b>${esc(teamName(onbScope))}</b>, selain course di tab "Semua tim".` : 'Course wajib untuk semua peserta onboarding. Pilih tab tim untuk menambah course khusus tim.'}</p>` : '';
     main.innerHTML = `<div class="content-fade">${heading('Karyawan baru', 'Onboarding', `Peserta yang di-assign hanya bisa membuka course onboarding sampai semua modul selesai dan quiz-nya lulus (≥ 80). Tenggat ${dayLabel(settings.days)} dihitung sejak login pertama. Lewat tenggat tidak memblokir akses, hanya ditandai Terlambat.`)}
-      <section class="onb-settings"><h2>Course wajib</h2>
+      <section class="onb-settings"><h2>Course wajib</h2>${scopeTabs}
         ${onbData.programTotal ? '' : '<p class="onb-warn">Belum ada course onboarding yang tayang, jadi peserta yang di-assign belum dikunci. Pilih minimal satu course yang sudah di-publish.</p>'}
-        <form id="onb-settings-form"><ol class="onb-course-pick">${ordered.map(c => `<li><label><input type="checkbox" name="course" value="${esc(c.id)}" ${chosen.includes(c.id) ? 'checked' : ''} /><span><b>${esc(c.title)}</b><small>${c.lessons} modul · ${c.quizzes.length ? `quiz wajib lulus: ${c.quizzes.map(q => esc(q.title)).join(', ')}` : 'tanpa quiz'}</small></span></label></li>`).join('') || '<li class="empty-row">Belum ada course yang tayang.</li>'}</ol>
+        <form id="onb-settings-form"><ol class="onb-course-pick">${ordered.map(c => {const inAll = onbScope && onbDraft.courses.includes(c.id), ok = visible(c); return `<li><label class="${ok && !inAll ? '' : 'disabled'}"><input type="checkbox" name="course" data-onb-course value="${esc(c.id)}" ${chosen.includes(c.id) || inAll ? 'checked' : ''} ${ok && !inAll ? '' : 'disabled'} /><span><b>${esc(c.title)}</b><small>${c.lessons} modul · ${c.quizzes.length ? `quiz wajib lulus: ${c.quizzes.map(q => esc(q.title)).join(', ')}` : 'tanpa quiz'}${inAll ? ' · sudah wajib untuk semua tim' : ok ? '' : ' · tidak terlihat oleh tim ini (atur audiens course)'}</small><span class="team-chips">${teamChips(c.teams)}</span></span></label></li>`;}).join('') || '<li class="empty-row">Belum ada course yang tayang.</li>'}</ol>
         <div class="onb-settings-row"><label>Tenggat<span class="grade-num"><input type="number" name="days" min="1" max="90" value="${settings.days}" required /> hari sejak login pertama</span></label><button class="btn btn-orange" type="submit">Simpan pengaturan</button></div>
         <p class="hint">Urutan mengikuti daftar course. Course yang belum tayang tidak dihitung. Perubahan berlaku langsung untuk peserta yang sedang onboarding.</p></form></section>
       <section class="onb-people"><div class="onb-people-head"><div class="seg-tabs" role="tablist">${[['open', 'Belum selesai'], ['overdue', 'Terlambat'], ['completed', 'Selesai'], ['all', 'Semua']].map(([k, l]) => `<button type="button" role="tab" class="seg-tab ${onbFilter === k ? 'active' : ''}" aria-selected="${onbFilter === k}" data-act="onb-filter" data-f="${k}">${l}${k !== 'all' && counts[k] ? ` <span class="nav-badge ${k === 'completed' ? 'quiet' : ''}">${counts[k]}</span>` : ''}</button>`).join('')}</div>
@@ -595,7 +664,7 @@
     const due = p.status === 'completed' ? `<span class="when">Selesai ${fmtDate(p.completedAt)}${p.manual ? ` · dibuka manual${p.completedBy ? ' oleh ' + esc(p.completedBy) : ''}` : ''}</span>`
       : p.dueAt ? `<span class="when">${fmtDate(p.dueAt)}</span><small class="${p.status === 'overdue' ? 'hint-bad' : ''}">${p.status === 'overdue' ? `lewat ${dayLabel(Math.abs(p.daysLeft))}` : p.daysLeft <= 0 ? 'hari ini' : `sisa ${dayLabel(p.daysLeft)}`}</small>` : '<small>Mulai dihitung saat login pertama</small>';
     const open = p.status !== 'completed';
-    return `<tr><td><a class="row-title" href="#raport/${p.id}">${esc(p.name)}</a><small>${esc(p.email)}</small></td><td>${badge(OSTATUS[p.status] || OSTATUS.none)}</td>
+    return `<tr><td><a class="row-title" href="#raport/${p.id}">${esc(p.name)}</a><small>${esc(p.email)}</small><div class="team-chips">${teamChips(p.teams, '')}</div></td><td>${badge(OSTATUS[p.status] || OSTATUS.none)}</td>
       <td><div class="onb-progress"><b>${p.done}/${p.total}</b> course<div class="mini-track"><span style="width:${pct}%"></span></div></div><details class="onb-detail"><summary>Rincian</summary><ul>${detail}</ul></details></td>
       <td>${due}</td><td class="col-actions">${open && p.dueAt ? `<button class="btn btn-outline" data-act="onb-extend" data-id="${p.id}">Perpanjang</button>` : ''}${open ? `<button class="btn btn-outline" data-act="onb-unlock" data-id="${p.id}" data-name="${esc(p.name)}">Buka akses</button>` : ''}<button class="btn btn-outline btn-danger-text" data-act="onb-cancel" data-id="${p.id}" data-name="${esc(p.name)}">${open ? 'Batalkan' : 'Hapus dari daftar'}</button></td></tr>`;
   }
@@ -605,9 +674,9 @@
   main.addEventListener('submit', async e => {
     if (e.target.id === 'onb-settings-form') {
       e.preventDefault(); const f = e.target, btn = f.querySelector('[type=submit]');
-      const body = {courses: [...f.querySelectorAll('[name=course]:checked')].map(x => x.value), days: Number(f.elements.days.value)};
+      const body = {courses: onbDraft.courses, byTeam: onbDraft.byTeam, days: Number(f.elements.days.value)};
       btn.disabled = true;
-      try {const r = await api.post('/api/admin/onboarding/settings', body); toast('Pengaturan onboarding disimpan.'); await renderOnboarding(r);} catch (err) {toast(err.message, true); btn.disabled = false;}
+      try {const r = await api.post('/api/admin/onboarding/settings', body); onbDraft = null; toast('Pengaturan onboarding disimpan.'); await renderOnboarding(r);} catch (err) {toast(err.message, true); btn.disabled = false;}
     } else if (e.target.id === 'onb-assign-form') {
       e.preventDefault(); const id = e.target.elements.user.value; if (!id) return;
       await onbAction(id, {action: 'assign'}, 'Peserta di-assign ke onboarding. Materi lain terkunci sampai onboarding selesai.');
@@ -622,12 +691,15 @@
 
   // ---------- penilaian essay ----------
   const pts = n => n === null || n === undefined ? '—' : String(Math.round(Number(n) * 100) / 100).replace('.', ',');
+  let gradingTeam = '', gradingTab = 'pending';
   async function renderGrading(tab) {
-    const {items: list} = await api.get('/api/admin/grading?status=' + tab);
+    gradingTab = tab;
+    const {items: all} = await api.get('/api/admin/grading?status=' + tab);
+    const list = all.filter(a => !gradingTeam || (gradingTeam === '__none' ? !a.teams.length : a.teams.includes(gradingTeam)));
     const tabs = `<div class="seg-tabs" role="tablist">${[['pending', 'Menunggu penilaian'], ['graded', 'Sudah dinilai']].map(([k, l]) => `<a role="tab" class="seg-tab ${tab === k ? 'active' : ''}" aria-selected="${tab === k}" href="#grading${k === 'graded' ? '/graded' : ''}">${l}${k === 'pending' && pendingCount ? ` <span class="nav-badge">${pendingCount}</span>` : ''}</a>`).join('')}</div>`;
-    main.innerHTML = `<div class="content-fade">${heading('Quiz essay', 'Penilaian', 'Jawaban essay peserta dinilai di sini. Skor akhir baru muncul di quiz, raport, dan Nilai Quiz setelah disimpan.')}${tabs}
+    main.innerHTML = `<div class="content-fade">${heading('Quiz essay', 'Penilaian', 'Jawaban essay peserta dinilai di sini. Skor akhir baru muncul di quiz, raport, dan Nilai Quiz setelah disimpan.', `<select id="grading-team" aria-label="Filter tim">${teamOptions(gradingTeam, 'Semua tim', true)}</select>`)}${tabs}
       ${list.length ? `<div class="table-wrap"><table class="admin-table"><thead><tr><th>Peserta</th><th>Quiz</th><th>Dikirim</th>${tab === 'graded' ? '<th>Skor</th><th>Dinilai</th>' : ''}<th class="col-actions">Aksi</th></tr></thead><tbody>
-      ${list.map(a => `<tr><td><span class="row-title">${esc(a.name)}</span><small>${esc(a.email)}</small></td><td>${esc(a.quizTitle || a.quizId)}</td><td><span class="when">${fmtDate(a.createdAt)}</span></td>${tab === 'graded' ? `<td><b>${a.score}</b>${a.score >= 80 ? ` <span class="st st-live">Lulus</span>` : ''}</td><td><span class="when">${fmtDate(a.gradedAt)}${a.grader ? ' · ' + esc(a.grader) : ''}</span></td>` : ''}<td class="col-actions"><a class="btn ${tab === 'pending' ? 'btn-orange' : 'btn-outline'}" href="#grading/${a.userId}/${a.attemptId}">${tab === 'pending' ? 'Nilai' : 'Lihat / ubah'}</a></td></tr>`).join('')}</tbody></table></div>`
+      ${list.map(a => `<tr><td><span class="row-title">${esc(a.name)}</span><small>${esc(a.email)}</small><div class="team-chips">${teamChips(a.teams, '')}</div></td><td>${esc(a.quizTitle || a.quizId)}</td><td><span class="when">${fmtDate(a.createdAt)}</span></td>${tab === 'graded' ? `<td><b>${a.score}</b>${a.score >= 80 ? ` <span class="st st-live">Lulus</span>` : ''}</td><td><span class="when">${fmtDate(a.gradedAt)}${a.grader ? ' · ' + esc(a.grader) : ''}</span></td>` : ''}<td class="col-actions"><a class="btn ${tab === 'pending' ? 'btn-orange' : 'btn-outline'}" href="#grading/${a.userId}/${a.attemptId}">${tab === 'pending' ? 'Nilai' : 'Lihat / ubah'}</a></td></tr>`).join('')}</tbody></table></div>`
       : `<div class="raport-empty">${tab === 'pending' ? 'Tidak ada jawaban essay yang menunggu penilaian. 🎉' : 'Belum ada essay yang dinilai.'}</div>`}</div>`;
   }
   let grading = null;
@@ -842,7 +914,12 @@
           showModal('Pratinjau artikel — tampilan peserta', `<div class="preview-stage"><div class="page-narrow"><article class="article-reader page-card"><div class="modal-kicker">${esc(d.category)}</div><h1>${esc(d.title)}</h1><div class="reader-meta"><span>SPUN Learning Team</span><span>${Number(d.minutes) || 0} menit baca</span></div><p class="reader-lead">${esc(d.description)}</p>${previewSections(d.sections) + previewDocs(d.docs)}<p class="sample-note">Pratinjau draft — peserta baru melihatnya setelah Publish.</p></article></div></div>`, 'full');
           break;
         case 'invite': inviteDialog(); break;
+        case 'user-teams': userTeamsDialog(b.dataset.id); break;
+        case 'team-members': e.preventDefault(); userTeam = b.dataset.id; location.hash = '#users'; break;
+        case 'team-rename': {const t = teamList.find(x => x.id === b.dataset.id), v = await askText('Nama tim', t?.name || ''); if (v === null || v === undefined || !String(v).trim()) break; try {teamList = (await api.post(`/api/admin/teams/${b.dataset.id}`, {name: v})).teams; toast('Nama tim diubah.'); await renderTeams();} catch (err) {toast(err.message, true);} break;}
+        case 'team-delete': {const t = teamList.find(x => x.id === b.dataset.id); if (!(await confirmBox(`Hapus tim "${t?.name}"? ${t?.members ? `${t.members} peserta akan dikeluarkan dari tim ini (akun & progres mereka tetap aman).` : ''}`, 'Hapus tim', true))) break; try {teamList = (await api.post(`/api/admin/teams/${b.dataset.id}/delete`, {})).teams; toast('Tim dihapus.'); await renderTeams();} catch (err) {toast(err.message, true);} break;}
         case 'onb-filter': onbFilter = b.dataset.f; renderOnboarding(onbData); break;
+        case 'onb-scope': onbScope = b.dataset.f; renderOnboarding(onbData); break;
         case 'onb-extend': onbExtendDialog(b.dataset.id); break;
         case 'onb-unlock': if (await confirmBox(`Buka akses penuh untuk ${b.dataset.name}? Onboarding dianggap selesai dan semua materi langsung terbuka, meskipun course onboarding belum selesai. Tercatat sebagai dibuka manual atas nama kamu.`, 'Buka akses')) await onbAction(b.dataset.id, {action: 'unlock'}, 'Akses penuh dibuka.'); break;
         case 'onb-cancel': if (await confirmBox(`Keluarkan ${b.dataset.name} dari onboarding? Peserta langsung mendapat akses penuh dan tidak lagi muncul di daftar onboarding. Progres belajarnya tetap tersimpan.`, 'Keluarkan', true)) await onbAction(b.dataset.id, {action: 'cancel'}, 'Peserta dikeluarkan dari onboarding.'); break;

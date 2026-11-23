@@ -6,6 +6,7 @@ import {KINDS, ID_RE, normalize, forPublish, slugify, mediaPrefix} from './conte
 import {buildRaport, parsePeriod} from './raport.mjs';
 import {loadCatalog} from './catalog.mjs';
 import {onboardingOverview, saveSettings, updateUserOnboarding} from './onboarding.mjs';
+import {listTeams, createTeam, renameTeam, deleteTeam, teamsByUser, teamIdsOf, setUserTeams, assertTeams, scopeCatalog, audienceOf} from './teams.mjs';
 
 const iso = v => v == null ? null : v instanceof Date ? v.toISOString() : String(v);
 const parseJson = v => typeof v === 'string' ? JSON.parse(v) : v;
@@ -20,7 +21,7 @@ function status(row) {
 function summary(row) {
   const d = parseJson(row.draft);
   return {
-    kind: row.kind, id: row.id, title: d.title || '(tanpa judul)', category: d.category || '',
+    kind: row.kind, id: row.id, title: d.title || '(tanpa judul)', category: d.category || '', teams: d.teams || [], course: d.course || '',
     count: row.kind === 'course' ? d.lessons?.length || 0 : row.kind === 'quiz' ? d.questions?.length || 0 : d.sections?.length || 0,
     status: status(row), revision: row.revision, sortOrder: row.sort_order,
     updatedAt: iso(row.updated_at), publishedAt: iso(row.published_at), updatedBy: row.updated_by_name || null
@@ -46,8 +47,9 @@ async function userList(db) {
       (SELECT max(x) FROM (SELECT max(completed_at) AS x FROM lesson_progress p WHERE p.user_id=au.id
          UNION ALL SELECT max(created_at) FROM quiz_attempts a WHERE a.user_id=au.id) s) AS last_activity
     FROM auth.users au LEFT JOIN users u ON u.id=au.id ORDER BY lower(COALESCE(u.name, au.email))`).all();
+  const teams = await teamsByUser(db);
   return rows.results.map(r => ({
-    id: r.id, name: r.name, email: r.email, role: r.role,
+    id: r.id, name: r.name, email: r.email, role: r.role, teams: teams[r.id] || [],
     status: r.status === 'disabled' ? 'disabled' : r.last_sign_in_at ? 'active' : 'invited',
     createdAt: iso(r.created_at), lastSignInAt: iso(r.last_sign_in_at), lastActivity: iso(r.last_activity),
     onboarding: !r.ob_required ? null : r.ob_done ? 'completed' : !r.ob_started ? 'not_started' : Date.now() > Date.parse(iso(r.ob_due)) ? 'overdue' : 'active',
@@ -61,6 +63,12 @@ async function authUser(db, id) {
 }
 async function ensureRow(db, u) {
   await sql(db, 'INSERT INTO users(id,name,email,created_at) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING', u.id, u.name, u.email, new Date().toISOString()).run();
+}
+
+// Katalog yang terlihat oleh seorang peserta (admin: semua).
+async function catalogFor(db, userId) {
+  const full = await loadCatalog(db), row = await sql(db, 'SELECT role FROM users WHERE id=?', userId).first();
+  return row?.role === 'admin' ? full : scopeCatalog(full, await teamIdsOf(db, userId));
 }
 
 async function publishedCatalogLite(db) {
@@ -86,6 +94,7 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
     if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article)$/)) && method === 'POST') {
       const kind = m[1], body = await bodyJSON(request, 512 * 1024);
       const draft = normalize(kind, body.draft || {}, ctx);
+      await assertTeams(db, draft.teams);
       const base = slugify(draft.title);
       let id = base;
       for (let n = 2; await sql(db, 'SELECT 1 AS x FROM content_items WHERE kind=? AND id=?', kind, id).first(); n++) id = `${base.slice(0, 54)}-${n}`;
@@ -106,6 +115,7 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
       if (body.baseRevision !== undefined && body.baseRevision !== row.revision) fail(409, `Konten ini baru saja diubah${row.updated_by_name ? ' oleh ' + row.updated_by_name : ''}. Muat ulang untuk melihat versi terbaru.`);
       if (!action) {
         const draft = normalize(kind, body.draft, ctx);
+        await assertTeams(db, draft.teams);
         await sql(db, 'UPDATE content_items SET draft=?::jsonb, revision=revision+1, updated_at=now(), updated_by=? WHERE kind=? AND id=?', JSON.stringify(draft), user.id, kind, id).run();
       } else if (action === 'publish') {
         const draft = normalize(kind, parseJson(row.draft), ctx);
@@ -145,16 +155,33 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
       if (!NAME_RE.test(name)) fail(422, 'Isi nama 2–80 karakter.');
       if (await sql(db, 'SELECT 1 AS x FROM auth.users WHERE lower(email)=?', email).first()) fail(409, 'Email ini sudah terdaftar.');
       const onboarding = role === 'learner' && body.onboarding !== false;
+      const teams = await assertTeams(db, body.teams ?? []);
       const {id} = await admin.invite(email, {name, redirectTo: origin + '/'});
       await sql(db, 'INSERT INTO users(id,name,email,role,created_at,onboarding_required) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role, onboarding_required=excluded.onboarding_required', id, name, email, role, new Date().toISOString(), onboarding).run();
+      if (teams.length) await setUserTeams(db, id, teams);
       return json({ok: true, users: await userList(db)}, 201);
     }
+    // ---------- Tim ----------
+    if (path === '/api/admin/teams' && method === 'GET') return json({teams: await listTeams(db)});
+    if (path === '/api/admin/teams' && method === 'POST') {await createTeam(db, await bodyJSON(request)); return json({teams: await listTeams(db)}, 201);}
+    if ((m = path.match(/^\/api\/admin\/teams\/([a-z0-9-]{1,60})(\/delete)?$/)) && method === 'POST') {
+      if (m[2]) {await bodyJSON(request); await deleteTeam(db, m[1]);} else await renameTeam(db, m[1], await bodyJSON(request));
+      return json({teams: await listTeams(db)});
+    }
+    if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/teams$/)) && method === 'POST') {
+      const body = await bodyJSON(request);
+      const u = await authUser(db, m[1]);
+      await ensureRow(db, u);
+      await setUserTeams(db, u.id, body.teams ?? []);
+      return json({ok: true, users: await userList(db)});
+    }
+
     // ---------- Onboarding ----------
     if (path === '/api/admin/onboarding' && method === 'GET') return json(await onboardingOverview(db, await loadCatalog(db)));
     if (path === '/api/admin/onboarding/settings' && method === 'POST') {
       const body = await bodyJSON(request);
       const ids = (await sql(db, "SELECT id FROM content_items WHERE kind='course'").all()).results.map(r => r.id);
-      await saveSettings(db, body, ids, user.id);
+      await saveSettings(db, body, ids, user.id, (await listTeams(db)).map(t => t.id));
       return json(await onboardingOverview(db, await loadCatalog(db)));
     }
     if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/onboarding$/)) && method === 'POST') {
@@ -167,11 +194,12 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
     if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/raport$/)) && method === 'GET') {
       const u = await authUser(db, m[1]);
       await ensureRow(db, u);
-      return json(await buildRaport(db, u.id, parsePeriod(url)));
+      return json(await buildRaport(db, u.id, parsePeriod(url), await catalogFor(db, u.id)));
     }
     if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})$/)) && method === 'GET') {
       const u = await authUser(db, m[1]);
-      const catalog = await publishedCatalogLite(db);
+      const scoped = await catalogFor(db, u.id);
+      const catalog = [...scoped.courses.map(c => ({...c, kind: 'course'})), ...scoped.quizzes.map(q => ({...q, kind: 'quiz'}))];
       const [p, a, r] = await Promise.all([
         sql(db, 'SELECT course_id,lesson_id FROM lesson_progress WHERE user_id=?', u.id).all(),
         sql(db, "SELECT quiz_id,max(score) AS best,count(*) AS attempts,max(created_at) AS last FROM quiz_attempts WHERE user_id=? AND status='graded' GROUP BY quiz_id", u.id).all(),
@@ -185,7 +213,7 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
         const x = a.results.find(x => x.quiz_id === q.id);
         return {id: q.id, title: q.title, best: x ? Number(x.best) : null, attempts: x ? Number(x.attempts) : 0, last: iso(x?.last)};
       });
-      return json({user: {id: u.id, name: u.name, email: u.email}, courses, quizzes, articlesRead: Number(r.n)});
+      return json({user: {id: u.id, name: u.name, email: u.email, teams: await teamIdsOf(db, u.id)}, courses, quizzes, articlesRead: Number(r.n)});
     }
     if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/(role|status|resend)$/)) && method === 'POST') {
       const [, id, action] = m, body = await bodyJSON(request);
@@ -223,18 +251,29 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
         if (r.status === 'pending') {c.pending++; continue;}
         c.best = Math.max(c.best ?? 0, r.score); c.last = r.score;
       }
-      const users = (await userList(db)).map(({id, name, email, role, status}) => ({id, name, email, role, status}));
-      return json({quizzes: catalog.map(q => ({id: q.id, title: q.title, category: q.category, questions: q.questions.length})), users, cells, period: {from: period.fromDay, to: period.toDay}, generatedAt: new Date().toISOString()});
+      const users = (await userList(db)).map(({id, name, email, role, status, teams}) => ({id, name, email, role, status, teams}));
+      const full = await loadCatalog(db);
+      return json({quizzes: catalog.map(q => ({id: q.id, title: q.title, category: q.category, questions: q.questions.length, teams: audienceOf(q, 'quiz', full)})), users, cells, period: {from: period.fromDay, to: period.toDay}, generatedAt: new Date().toISOString()});
     }
 
     // ---------- Laporan ----------
     if (path === '/api/admin/report' && method === 'GET') {
-      const catalog = await publishedCatalogLite(db);
-      const [p, e, a] = await Promise.all([
+      // ?team=<id>: hanya anggota tim itu dan materi yang terlihat oleh tim itu.
+      const team = url.searchParams.get('team') || '';
+      let catalog = await publishedCatalogLite(db), members = null, allUsers = await userList(db);
+      if (team) {
+        await assertTeams(db, [team]);
+        const full = await loadCatalog(db), sc = scopeCatalog(full, [team]);
+        const keep = new Set([...sc.courses.map(c => 'course:' + c.id), ...sc.quizzes.map(q => 'quiz:' + q.id)]);
+        catalog = catalog.filter(x => keep.has(x.kind + ':' + x.id));
+        allUsers = allUsers.filter(u => u.teams.includes(team)); members = new Set(allUsers.map(u => u.id));
+      }
+      const only = rows => members ? {results: rows.results.filter(x => members.has(x.user_id))} : rows;
+      const [p, e, a] = (await Promise.all([
         sql(db, 'SELECT user_id,course_id,lesson_id FROM lesson_progress').all(),
         sql(db, 'SELECT user_id,course_id FROM enrollments').all(),
         sql(db, "SELECT user_id,quiz_id,max(score) AS best,count(*) AS attempts FROM quiz_attempts WHERE status='graded' GROUP BY user_id,quiz_id").all()
-      ]);
+      ])).map(only);
       const courses = catalog.filter(c => c.kind === 'course').map(c => {
         const ids = new Set(c.lessons.map(l => l.id)), per = new Map();
         for (const x of p.results) if (x.course_id === c.id && ids.has(x.lesson_id)) per.set(x.user_id, (per.get(x.user_id) || 0) + 1);
@@ -248,7 +287,7 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
         const rows = a.results.filter(x => x.quiz_id === q.id);
         return {id: q.id, title: q.title, takers: rows.length, passed: rows.filter(x => Number(x.best) >= 80).length, avgBest: rows.length ? Math.round(rows.reduce((s, x) => s + Number(x.best), 0) / rows.length) : null, attempts: rows.reduce((s, x) => s + Number(x.attempts), 0)};
       });
-      return json({courses, quizzes, users: await userList(db), generatedAt: new Date().toISOString()});
+      return json({courses, quizzes, users: allUsers, team: team || null, generatedAt: new Date().toISOString()});
     }
     // ---------- Penilaian essay ----------
     const QUIZ_TITLE = "COALESCE(ci.published->>'title', ci.draft->>'title', a.quiz_id)";
@@ -262,7 +301,8 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
         FROM quiz_attempts a JOIN users u ON u.id=a.user_id LEFT JOIN users g ON g.id=a.graded_by LEFT JOIN content_items ci ON ci.kind='quiz' AND ci.id=a.quiz_id
         WHERE ${graded ? "a.status='graded' AND a.review LIKE '%\"type\":\"essay\"%'" : "a.status='pending'"}
         ORDER BY ${graded ? 'a.graded_at DESC NULLS LAST' : 'a.created_at ASC'} LIMIT 200`).all();
-      return json({items: rows.results.map(r => ({userId: r.user_id, attemptId: r.attempt_id, quizId: r.quiz_id, quizTitle: r.quiz_title, name: r.name, email: r.email, createdAt: iso(r.created_at), gradedAt: iso(r.graded_at), score: r.score, status: r.status, grader: r.grader}))});
+      const tm = await teamsByUser(db);
+      return json({items: rows.results.map(r => ({teams: tm[r.user_id] || [], userId: r.user_id, attemptId: r.attempt_id, quizId: r.quiz_id, quizTitle: r.quiz_title, name: r.name, email: r.email, createdAt: iso(r.created_at), gradedAt: iso(r.graded_at), score: r.score, status: r.status, grader: r.grader}))});
     }
     if ((m = path.match(/^\/api\/admin\/grading\/([0-9a-f-]{36})\/([0-9a-f-]{36})$/))) {
       const [, uid, aid] = m;

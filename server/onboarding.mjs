@@ -2,6 +2,7 @@
 // Selama onboarding aktif, peserta hanya bisa membuka course onboarding (dan quiz yang ditautkan ke course itu).
 // Selesai = semua modul selesai + semua quiz course itu lulus (skor ≥ 80, sudah dinilai).
 import {sql, fail} from './http.mjs';
+import {teamIdsOf, teamsByUser, scopeCatalog} from './teams.mjs';
 
 const DAY = 86400000;
 export const DEFAULT_DAYS = 14;
@@ -11,23 +12,35 @@ const parseJson = v => typeof v === 'string' ? JSON.parse(v) : v;
 export async function getSettings(db) {
   const row = await sql(db, "SELECT value FROM app_settings WHERE key='onboarding'").first();
   const v = row ? parseJson(row.value) : {};
-  return {courses: Array.isArray(v.courses) ? v.courses.filter(x => typeof x === 'string') : [], days: Number.isInteger(v.days) ? v.days : DEFAULT_DAYS};
+  const byTeam = {};
+  for (const [t, list] of Object.entries(v.byTeam && typeof v.byTeam === 'object' ? v.byTeam : {})) if (Array.isArray(list)) byTeam[t] = list.filter(x => typeof x === 'string');
+  return {courses: Array.isArray(v.courses) ? v.courses.filter(x => typeof x === 'string') : [], byTeam, days: Number.isInteger(v.days) ? v.days : DEFAULT_DAYS};
 }
 
-export async function saveSettings(db, body, catalogIds, userId) {
-  if (!Array.isArray(body.courses) || body.courses.length > 30) fail(422, 'Pilih maksimal 30 course.');
-  const courses = [...new Set(body.courses)];
-  if (courses.some(id => typeof id !== 'string' || !catalogIds.includes(id))) fail(422, 'Ada course yang tidak ditemukan. Muat ulang halaman.');
+export async function saveSettings(db, body, catalogIds, userId, teamIds = []) {
+  const clean = list => {
+    if (!Array.isArray(list) || list.length > 30) fail(422, 'Pilih maksimal 30 course.');
+    const out = [...new Set(list)];
+    if (out.some(id => typeof id !== 'string' || !catalogIds.includes(id))) fail(422, 'Ada course yang tidak ditemukan. Muat ulang halaman.');
+    return out;
+  };
+  const courses = clean(body.courses ?? []), byTeam = {};
+  for (const [t, list] of Object.entries(body.byTeam && typeof body.byTeam === 'object' ? body.byTeam : {})) {
+    if (!teamIds.includes(t)) fail(422, 'Ada tim yang tidak ditemukan. Muat ulang halaman.');
+    const l = clean(list).filter(id => !courses.includes(id));
+    if (l.length) byTeam[t] = l;
+  }
   const days = Number(body.days);
   if (!Number.isInteger(days) || days < 1 || days > 90) fail(422, 'Tenggat harus 1–90 hari.');
   await sql(db, "INSERT INTO app_settings(key,value,updated_at,updated_by) VALUES('onboarding',?::jsonb,now(),?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=now(), updated_by=excluded.updated_by",
-    JSON.stringify({courses, days}), userId).run();
-  return {courses, days};
+    JSON.stringify({courses, byTeam, days}), userId).run();
+  return {courses, byTeam, days};
 }
 
-// Course onboarding yang tayang, beserta quiz tayang yang ditautkan.
-export function program(settings, catalog) {
-  return settings.courses.map(id => catalog.courses.find(c => c.id === id)).filter(Boolean)
+// Course onboarding yang tayang untuk seseorang: course umum + course tim-timnya (catalog sudah disaring per tim).
+export function program(settings, catalog, teams = []) {
+  const ids = [...new Set([...settings.courses, ...teams.flatMap(t => settings.byTeam[t] || [])])];
+  return ids.map(id => catalog.courses.find(c => c.id === id)).filter(Boolean)
     .map(c => ({id: c.id, title: c.title, lessons: c.lessons.map(l => l.id), quizzes: catalog.quizzes.filter(q => q.course === c.id).map(q => ({id: q.id, title: q.title}))}));
 }
 
@@ -58,7 +71,7 @@ function describe(row, ev, now = Date.now()) {
 export async function learnerOnboarding(db, userId, catalog) {
   const row = await sql(db, 'SELECT onboarding_required,onboarding_started_at,onboarding_due_at,onboarding_completed_at,onboarding_completed_by FROM users WHERE id=?', userId).first();
   if (!row?.onboarding_required) return {required: false, status: 'none', active: false};
-  const settings = await getSettings(db), prog = program(settings, catalog);
+  const settings = await getSettings(db), prog = program(settings, catalog, await teamIdsOf(db, userId));
   if (!row.onboarding_completed_at && prog.length && !row.onboarding_started_at) {
     const start = new Date(), due = new Date(start.getTime() + settings.days * DAY);
     await sql(db, 'UPDATE users SET onboarding_started_at=?, onboarding_due_at=? WHERE id=? AND onboarding_started_at IS NULL', start.toISOString(), due.toISOString(), userId).run();
@@ -90,13 +103,14 @@ export function allowedIds(onb) {
 
 // Untuk panel admin: semua peserta yang di-assign onboarding.
 export async function onboardingOverview(db, catalog) {
-  const settings = await getSettings(db), prog = program(settings, catalog);
+  const settings = await getSettings(db), teamMap = await teamsByUser(db);
+  const progFor = id => program(settings, scopeCatalog(catalog, teamMap[id] || []), teamMap[id] || []);
   const rows = (await sql(db, `SELECT u.id,u.name,u.email,u.onboarding_required,u.onboarding_started_at,u.onboarding_due_at,u.onboarding_completed_at,u.onboarding_completed_by,
       cb.name AS completed_by_name, au.last_sign_in_at
     FROM users u LEFT JOIN users cb ON cb.id=u.onboarding_completed_by LEFT JOIN auth.users au ON au.id=u.id
     WHERE u.onboarding_required ORDER BY u.onboarding_completed_at NULLS FIRST, u.onboarding_due_at NULLS LAST, lower(u.name)`).all()).results;
   const progress = {}, best = {}, pending = {};
-  if (rows.length && prog.length) {
+  if (rows.length) {
     const [p, a] = await Promise.all([
       sql(db, 'SELECT p.user_id,p.course_id,p.lesson_id FROM lesson_progress p JOIN users u ON u.id=p.user_id WHERE u.onboarding_required').all(),
       sql(db, 'SELECT a.user_id,a.quiz_id,a.score,a.status FROM quiz_attempts a JOIN users u ON u.id=a.user_id WHERE u.onboarding_required').all()
@@ -109,15 +123,18 @@ export async function onboardingOverview(db, catalog) {
   }
   const people = [];
   for (const r of rows) {
+    const prog = progFor(r.id);
     const ev = evaluate(prog, progress[r.id] || {}, best[r.id] || {}, pending[r.id] || {});
     if (!r.onboarding_completed_at && r.onboarding_started_at && prog.length && ev.done === ev.total) {
       r.onboarding_completed_at = new Date().toISOString(); r.onboarding_completed_by = null;
       await sql(db, 'UPDATE users SET onboarding_completed_at=?, onboarding_completed_by=NULL WHERE id=? AND onboarding_completed_at IS NULL', r.onboarding_completed_at, r.id).run();
     }
-    people.push({id: r.id, name: r.name, email: r.email, signedIn: !!r.last_sign_in_at, completedBy: r.onboarding_completed_by ? r.completed_by_name : null, ...describe(r, ev)});
+    people.push({id: r.id, name: r.name, email: r.email, teams: teamMap[r.id] || [], signedIn: !!r.last_sign_in_at, completedBy: r.onboarding_completed_by ? r.completed_by_name : null, ...describe(r, ev)});
   }
-  const courses = catalog.courses.map(c => ({id: c.id, title: c.title, lessons: c.lessons.length, quizzes: catalog.quizzes.filter(q => q.course === c.id).map(q => ({id: q.id, title: q.title}))}));
-  return {settings, courses, people, programTotal: prog.length};
+  const courses = catalog.courses.map(c => ({id: c.id, title: c.title, teams: c.teams || [], lessons: c.lessons.length, quizzes: catalog.quizzes.filter(q => q.course === c.id).map(q => ({id: q.id, title: q.title}))}));
+  const published = new Set(catalog.courses.map(c => c.id));
+  const programTotal = new Set([...settings.courses, ...Object.values(settings.byTeam).flat()].filter(id => published.has(id))).size;
+  return {settings, courses, people, programTotal};
 }
 
 export async function updateUserOnboarding(db, targetId, body, adminId) {

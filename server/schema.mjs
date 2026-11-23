@@ -30,11 +30,23 @@ const ONBOARDING = [
   end $$`
 ];
 
+const TEAMS = [
+  'create table if not exists teams (id text primary key, name text not null, created_at timestamptz not null default now())',
+  'create table if not exists user_teams (user_id uuid not null references users (id) on delete cascade, team_id text not null references teams (id) on delete cascade, primary key (user_id, team_id))',
+  'create index if not exists user_teams_team_idx on user_teams (team_id)',
+  'alter table teams enable row level security',
+  'alter table user_teams enable row level security',
+  `do $$ begin
+    if exists (select 1 from pg_roles where rolname = 'anon') then execute 'revoke all on teams, user_teams from anon, authenticated'; end if;
+  end $$`
+];
+
 // Cek kolom pada tabel yang benar-benar dipakai query aplikasi (mengikuti search_path, tidak harus schema public).
 const hasColumn = (table, column) => `SELECT 1 AS x FROM pg_attribute WHERE attrelid = to_regclass('${table}') AND attname = '${column}' AND NOT attisdropped`;
 const MIGRATIONS = [
   {name: 'essay & penilaian', check: hasColumn('quiz_attempts', 'status'), statements: ESSAY_GRADING},
-  {name: 'onboarding', check: hasColumn('users', 'onboarding_completed_by') + " AND to_regclass('app_settings') IS NOT NULL", statements: ONBOARDING}
+  {name: 'onboarding', check: hasColumn('users', 'onboarding_completed_by') + " AND to_regclass('app_settings') IS NOT NULL", statements: ONBOARDING},
+  {name: 'tim', check: "SELECT 1 AS x WHERE to_regclass('teams') IS NOT NULL AND to_regclass('user_teams') IS NOT NULL", statements: TEAMS}
 ];
 
 const checked = new WeakMap();

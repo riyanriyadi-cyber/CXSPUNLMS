@@ -22,7 +22,7 @@ test('Onboarding karyawan baru', async t => {
     assert.equal((await call('/api/admin/onboarding/settings', {token: adm, body: {courses: ['cx'], days: 0}})).status, 422);
     const r = await call('/api/admin/onboarding/settings', {token: adm, body: {courses: ['cx', 'cx'], days: 14}});
     assert.equal(r.status, 200);
-    assert.deepEqual(r.data.settings, {courses: ['cx'], days: 14});
+    assert.deepEqual(r.data.settings, {courses: ['cx'], byTeam: {}, days: 14});
     assert.equal(r.data.programTotal, 1);
   });
 

@@ -4,6 +4,7 @@ import {escapeDeep} from './content.mjs';
 import {loadCatalog} from './catalog.mjs';
 import {buildRaport, parsePeriod} from './raport.mjs';
 import {learnerOnboarding, allowedIds} from './onboarding.mjs';
+import {teamIdsOf, scopeCatalog} from './teams.mjs';
 export {json, HttpError};
 
 const iso = v => v instanceof Date ? v.toISOString() : String(v);
@@ -82,7 +83,8 @@ export async function api(request, {db, user, origin}) {
     if (!user?.id) fail(401, 'Silakan masuk untuk melanjutkan.');
     const path = new URL(request.url).pathname, method = request.method;
     protectMutation(request, origin);
-    const catalog = await loadCatalog(db);
+    // Peserta hanya menerima materi untuk semua tim + timnya sendiri; admin melihat semuanya.
+    const catalog = user.role === 'admin' ? await loadCatalog(db) : scopeCatalog(await loadCatalog(db), await teamIdsOf(db, user.id));
     const onboarding = await learnerOnboarding(db, user.id, catalog), lock = onboarding.active ? allowedIds(onboarding) : null;
     const stateNow = async () => ({...await learningState(db, user.id, catalog), onboarding: await learnerOnboarding(db, user.id, catalog)});
     if (path === '/api/catalog' && method === 'GET') return json(safeCatalog(catalog, lock));

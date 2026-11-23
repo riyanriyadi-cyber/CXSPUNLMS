@@ -5176,7 +5176,7 @@ var require_container = __commonJS({
     var Node2 = require_node();
     var { isClean, my } = require_symbols();
     var AtRule;
-    var parse2;
+    var parse3;
     var Root2;
     var Rule;
     function cleanSource(nodes) {
@@ -5343,7 +5343,7 @@ var require_container = __commonJS({
       }
       normalize(nodes, sample) {
         if (typeof nodes === "string") {
-          nodes = cleanSource(parse2(nodes).nodes);
+          nodes = cleanSource(parse3(nodes).nodes);
         } else if (typeof nodes === "undefined") {
           nodes = [];
         } else if (Array.isArray(nodes)) {
@@ -5552,7 +5552,7 @@ var require_container = __commonJS({
       }
     };
     Container.registerParse = (dependant) => {
-      parse2 = dependant;
+      parse3 = dependant;
     };
     Container.registerRule = (dependant) => {
       Rule = dependant;
@@ -9125,7 +9125,7 @@ var require_parse = __commonJS({
     var Container = require_container();
     var Input = require_input();
     var Parser2 = require_parser();
-    function parse2(css, opts) {
+    function parse3(css, opts) {
       let input = new Input(css, opts);
       let parser = new Parser2(input);
       try {
@@ -9146,9 +9146,9 @@ var require_parse = __commonJS({
       }
       return parser.root;
     }
-    module.exports = parse2;
-    parse2.default = parse2;
-    Container.registerParse(parse2);
+    module.exports = parse3;
+    parse3.default = parse3;
+    Container.registerParse(parse3);
   }
 });
 
@@ -9255,7 +9255,7 @@ var require_lazy_result = __commonJS({
     var Container = require_container();
     var Document2 = require_document();
     var MapGenerator = require_map_generator();
-    var parse2 = require_parse();
+    var parse3 = require_parse();
     var Result2 = require_result();
     var Root2 = require_root();
     var stringify2 = require_stringify();
@@ -9389,7 +9389,7 @@ var require_lazy_result = __commonJS({
             opts.map.prev = css.map;
           }
         } else {
-          let parser = parse2;
+          let parser = parse3;
           if (opts.syntax) parser = opts.syntax.parse;
           if (opts.parser) parser = opts.parser;
           if (parser.parse) parser = parser.parse;
@@ -9780,7 +9780,7 @@ var require_no_work_result = __commonJS({
   "node_modules/postcss/lib/no-work-result.js"(exports, module) {
     "use strict";
     var MapGenerator = require_map_generator();
-    var parse2 = require_parse();
+    var parse3 = require_parse();
     var Result2 = require_result();
     var stringify2 = require_stringify();
     var warnOnce = require_warn_once();
@@ -9808,7 +9808,7 @@ var require_no_work_result = __commonJS({
           return this._root;
         }
         let root;
-        let parser = parse2;
+        let parser = parse3;
         try {
           root = parser(this._css, this._opts);
         } catch (error) {
@@ -9963,7 +9963,7 @@ var require_postcss = __commonJS({
     var LazyResult = require_lazy_result();
     var list = require_list();
     var Node2 = require_node();
-    var parse2 = require_parse();
+    var parse3 = require_parse();
     var Processor = require_processor();
     var Result2 = require_result();
     var Root2 = require_root();
@@ -10008,7 +10008,7 @@ var require_postcss = __commonJS({
       return creator;
     };
     postcss.stringify = stringify2;
-    postcss.parse = parse2;
+    postcss.parse = parse3;
     postcss.fromJSON = fromJSON;
     postcss.list = list;
     postcss.comment = (defaults) => new Comment3(defaults);
@@ -13432,7 +13432,7 @@ function Subscribe(postgres2, options) {
     }
     function data(x2) {
       if (x2[0] === 119) {
-        parse(x2.subarray(25), state2, sql3.options.parsers, handle2, options.transform);
+        parse2(x2.subarray(25), state2, sql3.options.parsers, handle2, options.transform);
       } else if (x2[0] === 107 && x2[17]) {
         state2.lsn = x2.subarray(1, 9);
         pong();
@@ -13462,7 +13462,7 @@ function Subscribe(postgres2, options) {
 function Time(x) {
   return new Date(Date.UTC(2e3, 0, 1) + Number(x / BigInt(1e3)));
 }
-function parse(x, state, parsers2, handle2, transform) {
+function parse2(x, state, parsers2, handle2, transform) {
   const char = (acc, [k, v]) => (acc[k.charCodeAt(0)] = v, acc);
   Object.entries({
     R: (x2) => {
@@ -23470,7 +23470,12 @@ function normalize(kind, d, ctx) {
     title: str(d.title, 140, "Judul"),
     category: str(d.category, 60, "Kategori"),
     description: str(d.description, 500, "Deskripsi"),
-    color: pick(d.color, COLORS, "peach")
+    color: pick(d.color, COLORS, "peach"),
+    // Audiens: kosong = semua tim; berisi id tim = hanya anggota tim tersebut (quiz yang ditautkan ke course mengikuti course).
+    teams: [...new Set(arr(d.teams, 20, "Tim").map((t) => {
+      if (typeof t !== "string" || !ID_RE.test(t)) bad("Pilihan tim tidak valid.");
+      return t;
+    }))]
   };
   if (kind === "course") {
     const used = /* @__PURE__ */ new Set();
@@ -23689,6 +23694,94 @@ async function buildRaport(db, userId, period, catalog) {
   };
 }
 
+// server/teams.mjs
+async function listTeams(db) {
+  const rows = (await sql(db, `SELECT t.id,t.name,(SELECT count(*) FROM user_teams ut WHERE ut.team_id=t.id) AS members FROM teams t ORDER BY lower(t.name)`).all()).results;
+  const usage = await contentUsage(db);
+  return rows.map((r) => ({ id: r.id, name: r.name, members: Number(r.members), content: usage[r.id] || 0 }));
+}
+async function contentUsage(db) {
+  const rows = (await sql(db, "SELECT draft->'teams' AS d, published->'teams' AS p FROM content_items").all()).results;
+  const n = {};
+  for (const r of rows) {
+    const ids = /* @__PURE__ */ new Set([...parse(r.d) || [], ...parse(r.p) || []]);
+    for (const id of ids) n[id] = (n[id] || 0) + 1;
+  }
+  return n;
+}
+var parse = (v) => typeof v === "string" ? JSON.parse(v) : v;
+var cleanName = (v) => {
+  const name = String(v ?? "").trim().replace(/\s+/g, " ");
+  if (!name || name.length > 60) fail(422, "Nama tim wajib diisi (maksimal 60 karakter).");
+  return name;
+};
+async function createTeam(db, body) {
+  const name = cleanName(body.name);
+  if (await sql(db, "SELECT 1 AS x FROM teams WHERE lower(name)=lower(?)", name).first()) fail(409, `Tim "${name}" sudah ada.`);
+  if ((await sql(db, "SELECT count(*) AS n FROM teams").first()).n >= 50) fail(422, "Maksimal 50 tim.");
+  const base = slugify(name) || "tim";
+  let id = base;
+  for (let n = 2; await sql(db, "SELECT 1 AS x FROM teams WHERE id=?", id).first(); n++) id = `${base.slice(0, 54)}-${n}`;
+  await sql(db, "INSERT INTO teams(id,name) VALUES(?,?)", id, name).run();
+  return id;
+}
+async function renameTeam(db, id, body) {
+  const name = cleanName(body.name);
+  if (!await sql(db, "SELECT 1 AS x FROM teams WHERE id=?", id).first()) fail(404, "Tim tidak ditemukan.");
+  if (await sql(db, "SELECT 1 AS x FROM teams WHERE lower(name)=lower(?) AND id<>?", name, id).first()) fail(409, `Tim "${name}" sudah ada.`);
+  await sql(db, "UPDATE teams SET name=? WHERE id=?", name, id).run();
+}
+async function deleteTeam(db, id) {
+  if (!await sql(db, "SELECT 1 AS x FROM teams WHERE id=?", id).first()) fail(404, "Tim tidak ditemukan.");
+  const used = (await contentUsage(db))[id] || 0;
+  if (used) fail(409, `Tim ini masih dipakai sebagai audiens ${used} materi. Ubah audiens materi tersebut dulu.`);
+  const ob = await sql(db, "SELECT value FROM app_settings WHERE key='onboarding'").first();
+  const byTeam = ob ? parse(ob.value).byTeam || {} : {};
+  if (byTeam[id]?.length) fail(409, "Tim ini masih punya course onboarding. Kosongkan dulu di menu Onboarding.");
+  await sql(db, "DELETE FROM teams WHERE id=?", id).run();
+}
+async function teamIdsOf(db, userId) {
+  return (await sql(db, "SELECT team_id FROM user_teams WHERE user_id=? ORDER BY team_id", userId).all()).results.map((r) => r.team_id);
+}
+async function teamsByUser(db) {
+  const map = {};
+  for (const r of (await sql(db, "SELECT user_id,team_id FROM user_teams ORDER BY team_id").all()).results) (map[r.user_id] ||= []).push(r.team_id);
+  return map;
+}
+async function assertTeams(db, ids) {
+  if (!Array.isArray(ids)) fail(422, "Pilihan tim tidak valid.");
+  const uniq = [...new Set(ids)];
+  if (uniq.length > 20 || uniq.some((t) => typeof t !== "string")) fail(422, "Pilihan tim tidak valid.");
+  if (!uniq.length) return uniq;
+  const found = new Set((await sql(db, "SELECT id FROM teams").all()).results.map((r) => r.id));
+  const missing = uniq.filter((t) => !found.has(t));
+  if (missing.length) fail(422, "Ada tim yang tidak ditemukan. Muat ulang halaman.");
+  return uniq;
+}
+async function setUserTeams(db, userId, ids) {
+  const teams = await assertTeams(db, ids);
+  await db.batch([
+    db.prepare("DELETE FROM user_teams WHERE user_id=?").bind(userId),
+    ...teams.map((t) => db.prepare("INSERT INTO user_teams(user_id,team_id) VALUES(?,?)").bind(userId, t))
+  ]);
+  return teams;
+}
+function audienceOf(item, kind, catalog) {
+  if (kind === "quiz" && item.course) {
+    const c = catalog.courses.find((x) => x.id === item.course);
+    if (c) return c.teams || [];
+  }
+  return item.teams || [];
+}
+var canSee = (aud, teams) => !aud.length || aud.some((t) => teams.includes(t));
+function scopeCatalog(catalog, teams) {
+  return {
+    courses: catalog.courses.filter((c) => canSee(c.teams || [], teams)),
+    quizzes: catalog.quizzes.filter((q) => canSee(audienceOf(q, "quiz", catalog), teams)),
+    articles: catalog.articles.filter((a) => canSee(a.teams || [], teams))
+  };
+}
+
 // server/onboarding.mjs
 var DAY = 864e5;
 var DEFAULT_DAYS = 14;
@@ -23697,24 +23790,36 @@ var parseJson2 = (v) => typeof v === "string" ? JSON.parse(v) : v;
 async function getSettings(db) {
   const row = await sql(db, "SELECT value FROM app_settings WHERE key='onboarding'").first();
   const v = row ? parseJson2(row.value) : {};
-  return { courses: Array.isArray(v.courses) ? v.courses.filter((x) => typeof x === "string") : [], days: Number.isInteger(v.days) ? v.days : DEFAULT_DAYS };
+  const byTeam = {};
+  for (const [t, list] of Object.entries(v.byTeam && typeof v.byTeam === "object" ? v.byTeam : {})) if (Array.isArray(list)) byTeam[t] = list.filter((x) => typeof x === "string");
+  return { courses: Array.isArray(v.courses) ? v.courses.filter((x) => typeof x === "string") : [], byTeam, days: Number.isInteger(v.days) ? v.days : DEFAULT_DAYS };
 }
-async function saveSettings(db, body, catalogIds, userId) {
-  if (!Array.isArray(body.courses) || body.courses.length > 30) fail(422, "Pilih maksimal 30 course.");
-  const courses = [...new Set(body.courses)];
-  if (courses.some((id) => typeof id !== "string" || !catalogIds.includes(id))) fail(422, "Ada course yang tidak ditemukan. Muat ulang halaman.");
+async function saveSettings(db, body, catalogIds, userId, teamIds = []) {
+  const clean = (list) => {
+    if (!Array.isArray(list) || list.length > 30) fail(422, "Pilih maksimal 30 course.");
+    const out = [...new Set(list)];
+    if (out.some((id) => typeof id !== "string" || !catalogIds.includes(id))) fail(422, "Ada course yang tidak ditemukan. Muat ulang halaman.");
+    return out;
+  };
+  const courses = clean(body.courses ?? []), byTeam = {};
+  for (const [t, list] of Object.entries(body.byTeam && typeof body.byTeam === "object" ? body.byTeam : {})) {
+    if (!teamIds.includes(t)) fail(422, "Ada tim yang tidak ditemukan. Muat ulang halaman.");
+    const l = clean(list).filter((id) => !courses.includes(id));
+    if (l.length) byTeam[t] = l;
+  }
   const days = Number(body.days);
   if (!Number.isInteger(days) || days < 1 || days > 90) fail(422, "Tenggat harus 1\u201390 hari.");
   await sql(
     db,
     "INSERT INTO app_settings(key,value,updated_at,updated_by) VALUES('onboarding',?::jsonb,now(),?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=now(), updated_by=excluded.updated_by",
-    JSON.stringify({ courses, days }),
+    JSON.stringify({ courses, byTeam, days }),
     userId
   ).run();
-  return { courses, days };
+  return { courses, byTeam, days };
 }
-function program(settings, catalog) {
-  return settings.courses.map((id) => catalog.courses.find((c) => c.id === id)).filter(Boolean).map((c) => ({ id: c.id, title: c.title, lessons: c.lessons.map((l) => l.id), quizzes: catalog.quizzes.filter((q) => q.course === c.id).map((q) => ({ id: q.id, title: q.title })) }));
+function program(settings, catalog, teams = []) {
+  const ids = [.../* @__PURE__ */ new Set([...settings.courses, ...teams.flatMap((t) => settings.byTeam[t] || [])])];
+  return ids.map((id) => catalog.courses.find((c) => c.id === id)).filter(Boolean).map((c) => ({ id: c.id, title: c.title, lessons: c.lessons.map((l) => l.id), quizzes: catalog.quizzes.filter((q) => q.course === c.id).map((q) => ({ id: q.id, title: q.title })) }));
 }
 function evaluate(prog, progress, best, pending) {
   const courses = prog.map((c) => {
@@ -23743,7 +23848,7 @@ function describe(row, ev, now = Date.now()) {
 async function learnerOnboarding(db, userId, catalog) {
   const row = await sql(db, "SELECT onboarding_required,onboarding_started_at,onboarding_due_at,onboarding_completed_at,onboarding_completed_by FROM users WHERE id=?", userId).first();
   if (!row?.onboarding_required) return { required: false, status: "none", active: false };
-  const settings = await getSettings(db), prog = program(settings, catalog);
+  const settings = await getSettings(db), prog = program(settings, catalog, await teamIdsOf(db, userId));
   if (!row.onboarding_completed_at && prog.length && !row.onboarding_started_at) {
     const start = /* @__PURE__ */ new Date(), due = new Date(start.getTime() + settings.days * DAY);
     await sql(db, "UPDATE users SET onboarding_started_at=?, onboarding_due_at=? WHERE id=? AND onboarding_started_at IS NULL", start.toISOString(), due.toISOString(), userId).run();
@@ -23772,13 +23877,14 @@ function allowedIds(onb) {
   return { courses: new Set(onb.courses.map((c) => c.id)), quizzes: new Set(onb.courses.flatMap((c) => c.quizzes.map((q) => q.id))) };
 }
 async function onboardingOverview(db, catalog) {
-  const settings = await getSettings(db), prog = program(settings, catalog);
+  const settings = await getSettings(db), teamMap = await teamsByUser(db);
+  const progFor = (id) => program(settings, scopeCatalog(catalog, teamMap[id] || []), teamMap[id] || []);
   const rows = (await sql(db, `SELECT u.id,u.name,u.email,u.onboarding_required,u.onboarding_started_at,u.onboarding_due_at,u.onboarding_completed_at,u.onboarding_completed_by,
       cb.name AS completed_by_name, au.last_sign_in_at
     FROM users u LEFT JOIN users cb ON cb.id=u.onboarding_completed_by LEFT JOIN auth.users au ON au.id=u.id
     WHERE u.onboarding_required ORDER BY u.onboarding_completed_at NULLS FIRST, u.onboarding_due_at NULLS LAST, lower(u.name)`).all()).results;
   const progress = {}, best = {}, pending = {};
-  if (rows.length && prog.length) {
+  if (rows.length) {
     const [p, a] = await Promise.all([
       sql(db, "SELECT p.user_id,p.course_id,p.lesson_id FROM lesson_progress p JOIN users u ON u.id=p.user_id WHERE u.onboarding_required").all(),
       sql(db, "SELECT a.user_id,a.quiz_id,a.score,a.status FROM quiz_attempts a JOIN users u ON u.id=a.user_id WHERE u.onboarding_required").all()
@@ -23796,16 +23902,19 @@ async function onboardingOverview(db, catalog) {
   }
   const people = [];
   for (const r of rows) {
+    const prog = progFor(r.id);
     const ev = evaluate(prog, progress[r.id] || {}, best[r.id] || {}, pending[r.id] || {});
     if (!r.onboarding_completed_at && r.onboarding_started_at && prog.length && ev.done === ev.total) {
       r.onboarding_completed_at = (/* @__PURE__ */ new Date()).toISOString();
       r.onboarding_completed_by = null;
       await sql(db, "UPDATE users SET onboarding_completed_at=?, onboarding_completed_by=NULL WHERE id=? AND onboarding_completed_at IS NULL", r.onboarding_completed_at, r.id).run();
     }
-    people.push({ id: r.id, name: r.name, email: r.email, signedIn: !!r.last_sign_in_at, completedBy: r.onboarding_completed_by ? r.completed_by_name : null, ...describe(r, ev) });
+    people.push({ id: r.id, name: r.name, email: r.email, teams: teamMap[r.id] || [], signedIn: !!r.last_sign_in_at, completedBy: r.onboarding_completed_by ? r.completed_by_name : null, ...describe(r, ev) });
   }
-  const courses = catalog.courses.map((c) => ({ id: c.id, title: c.title, lessons: c.lessons.length, quizzes: catalog.quizzes.filter((q) => q.course === c.id).map((q) => ({ id: q.id, title: q.title })) }));
-  return { settings, courses, people, programTotal: prog.length };
+  const courses = catalog.courses.map((c) => ({ id: c.id, title: c.title, teams: c.teams || [], lessons: c.lessons.length, quizzes: catalog.quizzes.filter((q) => q.course === c.id).map((q) => ({ id: q.id, title: q.title })) }));
+  const published = new Set(catalog.courses.map((c) => c.id));
+  const programTotal = new Set([...settings.courses, ...Object.values(settings.byTeam).flat()].filter((id) => published.has(id))).size;
+  return { settings, courses, people, programTotal };
 }
 async function updateUserOnboarding(db, targetId, body, adminId) {
   const action = body.action;
@@ -23909,7 +24018,7 @@ async function api(request, { db, user, origin }) {
     if (!user?.id) fail(401, "Silakan masuk untuk melanjutkan.");
     const path = new URL(request.url).pathname, method = request.method;
     protectMutation(request, origin);
-    const catalog = await loadCatalog(db);
+    const catalog = user.role === "admin" ? await loadCatalog(db) : scopeCatalog(await loadCatalog(db), await teamIdsOf(db, user.id));
     const onboarding = await learnerOnboarding(db, user.id, catalog), lock = onboarding.active ? allowedIds(onboarding) : null;
     const stateNow = async () => ({ ...await learningState(db, user.id, catalog), onboarding: await learnerOnboarding(db, user.id, catalog) });
     if (path === "/api/catalog" && method === "GET") return json(safeCatalog(catalog, lock));
@@ -24005,6 +24114,8 @@ function summary(row) {
     id: row.id,
     title: d.title || "(tanpa judul)",
     category: d.category || "",
+    teams: d.teams || [],
+    course: d.course || "",
     count: row.kind === "course" ? d.lessons?.length || 0 : row.kind === "quiz" ? d.questions?.length || 0 : d.sections?.length || 0,
     status: status(row),
     revision: row.revision,
@@ -24031,11 +24142,13 @@ async function userList(db) {
       (SELECT max(x) FROM (SELECT max(completed_at) AS x FROM lesson_progress p WHERE p.user_id=au.id
          UNION ALL SELECT max(created_at) FROM quiz_attempts a WHERE a.user_id=au.id) s) AS last_activity
     FROM auth.users au LEFT JOIN users u ON u.id=au.id ORDER BY lower(COALESCE(u.name, au.email))`).all();
+  const teams = await teamsByUser(db);
   return rows.results.map((r) => ({
     id: r.id,
     name: r.name,
     email: r.email,
     role: r.role,
+    teams: teams[r.id] || [],
     status: r.status === "disabled" ? "disabled" : r.last_sign_in_at ? "active" : "invited",
     createdAt: iso5(r.created_at),
     lastSignInAt: iso5(r.last_sign_in_at),
@@ -24052,6 +24165,10 @@ async function authUser(db, id) {
 }
 async function ensureRow(db, u) {
   await sql(db, "INSERT INTO users(id,name,email,created_at) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING", u.id, u.name, u.email, (/* @__PURE__ */ new Date()).toISOString()).run();
+}
+async function catalogFor(db, userId) {
+  const full2 = await loadCatalog(db), row = await sql(db, "SELECT role FROM users WHERE id=?", userId).first();
+  return row?.role === "admin" ? full2 : scopeCatalog(full2, await teamIdsOf(db, userId));
 }
 async function publishedCatalogLite(db) {
   const rows = await sql(db, "SELECT kind,id,published FROM content_items WHERE published IS NOT NULL ORDER BY sort_order, created_at, id").all();
@@ -24073,6 +24190,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
     if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article)$/)) && method === "POST") {
       const kind = m[1], body = await bodyJSON(request, 512 * 1024);
       const draft = normalize(kind, body.draft || {}, ctx);
+      await assertTeams(db, draft.teams);
       const base = slugify(draft.title);
       let id = base;
       for (let n = 2; await sql(db, "SELECT 1 AS x FROM content_items WHERE kind=? AND id=?", kind, id).first(); n++) id = `${base.slice(0, 54)}-${n}`;
@@ -24093,6 +24211,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
       if (body.baseRevision !== void 0 && body.baseRevision !== row.revision) fail(409, `Konten ini baru saja diubah${row.updated_by_name ? " oleh " + row.updated_by_name : ""}. Muat ulang untuk melihat versi terbaru.`);
       if (!action) {
         const draft = normalize(kind, body.draft, ctx);
+        await assertTeams(db, draft.teams);
         await sql(db, "UPDATE content_items SET draft=?::jsonb, revision=revision+1, updated_at=now(), updated_by=? WHERE kind=? AND id=?", JSON.stringify(draft), user.id, kind, id).run();
       } else if (action === "publish") {
         const draft = normalize(kind, parseJson4(row.draft), ctx);
@@ -24130,15 +24249,36 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
       if (!NAME_RE.test(name)) fail(422, "Isi nama 2\u201380 karakter.");
       if (await sql(db, "SELECT 1 AS x FROM auth.users WHERE lower(email)=?", email).first()) fail(409, "Email ini sudah terdaftar.");
       const onboarding = role === "learner" && body.onboarding !== false;
+      const teams = await assertTeams(db, body.teams ?? []);
       const { id } = await admin.invite(email, { name, redirectTo: origin + "/" });
       await sql(db, "INSERT INTO users(id,name,email,role,created_at,onboarding_required) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role, onboarding_required=excluded.onboarding_required", id, name, email, role, (/* @__PURE__ */ new Date()).toISOString(), onboarding).run();
+      if (teams.length) await setUserTeams(db, id, teams);
       return json({ ok: true, users: await userList(db) }, 201);
+    }
+    if (path === "/api/admin/teams" && method === "GET") return json({ teams: await listTeams(db) });
+    if (path === "/api/admin/teams" && method === "POST") {
+      await createTeam(db, await bodyJSON(request));
+      return json({ teams: await listTeams(db) }, 201);
+    }
+    if ((m = path.match(/^\/api\/admin\/teams\/([a-z0-9-]{1,60})(\/delete)?$/)) && method === "POST") {
+      if (m[2]) {
+        await bodyJSON(request);
+        await deleteTeam(db, m[1]);
+      } else await renameTeam(db, m[1], await bodyJSON(request));
+      return json({ teams: await listTeams(db) });
+    }
+    if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/teams$/)) && method === "POST") {
+      const body = await bodyJSON(request);
+      const u = await authUser(db, m[1]);
+      await ensureRow(db, u);
+      await setUserTeams(db, u.id, body.teams ?? []);
+      return json({ ok: true, users: await userList(db) });
     }
     if (path === "/api/admin/onboarding" && method === "GET") return json(await onboardingOverview(db, await loadCatalog(db)));
     if (path === "/api/admin/onboarding/settings" && method === "POST") {
       const body = await bodyJSON(request);
       const ids = (await sql(db, "SELECT id FROM content_items WHERE kind='course'").all()).results.map((r) => r.id);
-      await saveSettings(db, body, ids, user.id);
+      await saveSettings(db, body, ids, user.id, (await listTeams(db)).map((t) => t.id));
       return json(await onboardingOverview(db, await loadCatalog(db)));
     }
     if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/onboarding$/)) && method === "POST") {
@@ -24151,11 +24291,12 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
     if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/raport$/)) && method === "GET") {
       const u = await authUser(db, m[1]);
       await ensureRow(db, u);
-      return json(await buildRaport(db, u.id, parsePeriod(url)));
+      return json(await buildRaport(db, u.id, parsePeriod(url), await catalogFor(db, u.id)));
     }
     if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})$/)) && method === "GET") {
       const u = await authUser(db, m[1]);
-      const catalog = await publishedCatalogLite(db);
+      const scoped = await catalogFor(db, u.id);
+      const catalog = [...scoped.courses.map((c) => ({ ...c, kind: "course" })), ...scoped.quizzes.map((q) => ({ ...q, kind: "quiz" }))];
       const [p, a, r] = await Promise.all([
         sql(db, "SELECT course_id,lesson_id FROM lesson_progress WHERE user_id=?", u.id).all(),
         sql(db, "SELECT quiz_id,max(score) AS best,count(*) AS attempts,max(created_at) AS last FROM quiz_attempts WHERE user_id=? AND status='graded' GROUP BY quiz_id", u.id).all(),
@@ -24169,7 +24310,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
         const x = a.results.find((x2) => x2.quiz_id === q.id);
         return { id: q.id, title: q.title, best: x ? Number(x.best) : null, attempts: x ? Number(x.attempts) : 0, last: iso5(x?.last) };
       });
-      return json({ user: { id: u.id, name: u.name, email: u.email }, courses, quizzes, articlesRead: Number(r.n) });
+      return json({ user: { id: u.id, name: u.name, email: u.email, teams: await teamIdsOf(db, u.id) }, courses, quizzes, articlesRead: Number(r.n) });
     }
     if ((m = path.match(/^\/api\/admin\/users\/([0-9a-f-]{36})\/(role|status|resend)$/)) && method === "POST") {
       const [, id, action] = m, body = await bodyJSON(request);
@@ -24219,16 +24360,27 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
         c.best = Math.max(c.best ?? 0, r.score);
         c.last = r.score;
       }
-      const users = (await userList(db)).map(({ id, name, email, role, status: status2 }) => ({ id, name, email, role, status: status2 }));
-      return json({ quizzes: catalog.map((q) => ({ id: q.id, title: q.title, category: q.category, questions: q.questions.length })), users, cells, period: { from: period.fromDay, to: period.toDay }, generatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+      const users = (await userList(db)).map(({ id, name, email, role, status: status2, teams }) => ({ id, name, email, role, status: status2, teams }));
+      const full2 = await loadCatalog(db);
+      return json({ quizzes: catalog.map((q) => ({ id: q.id, title: q.title, category: q.category, questions: q.questions.length, teams: audienceOf(q, "quiz", full2) })), users, cells, period: { from: period.fromDay, to: period.toDay }, generatedAt: (/* @__PURE__ */ new Date()).toISOString() });
     }
     if (path === "/api/admin/report" && method === "GET") {
-      const catalog = await publishedCatalogLite(db);
-      const [p, e, a] = await Promise.all([
+      const team = url.searchParams.get("team") || "";
+      let catalog = await publishedCatalogLite(db), members = null, allUsers = await userList(db);
+      if (team) {
+        await assertTeams(db, [team]);
+        const full2 = await loadCatalog(db), sc = scopeCatalog(full2, [team]);
+        const keep = /* @__PURE__ */ new Set([...sc.courses.map((c) => "course:" + c.id), ...sc.quizzes.map((q) => "quiz:" + q.id)]);
+        catalog = catalog.filter((x) => keep.has(x.kind + ":" + x.id));
+        allUsers = allUsers.filter((u) => u.teams.includes(team));
+        members = new Set(allUsers.map((u) => u.id));
+      }
+      const only = (rows) => members ? { results: rows.results.filter((x) => members.has(x.user_id)) } : rows;
+      const [p, e, a] = (await Promise.all([
         sql(db, "SELECT user_id,course_id,lesson_id FROM lesson_progress").all(),
         sql(db, "SELECT user_id,course_id FROM enrollments").all(),
         sql(db, "SELECT user_id,quiz_id,max(score) AS best,count(*) AS attempts FROM quiz_attempts WHERE status='graded' GROUP BY user_id,quiz_id").all()
-      ]);
+      ])).map(only);
       const courses = catalog.filter((c) => c.kind === "course").map((c) => {
         const ids = new Set(c.lessons.map((l) => l.id)), per = /* @__PURE__ */ new Map();
         for (const x of p.results) if (x.course_id === c.id && ids.has(x.lesson_id)) per.set(x.user_id, (per.get(x.user_id) || 0) + 1);
@@ -24242,7 +24394,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
         const rows = a.results.filter((x) => x.quiz_id === q.id);
         return { id: q.id, title: q.title, takers: rows.length, passed: rows.filter((x) => Number(x.best) >= 80).length, avgBest: rows.length ? Math.round(rows.reduce((s, x) => s + Number(x.best), 0) / rows.length) : null, attempts: rows.reduce((s, x) => s + Number(x.attempts), 0) };
       });
-      return json({ courses, quizzes, users: await userList(db), generatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+      return json({ courses, quizzes, users: allUsers, team: team || null, generatedAt: (/* @__PURE__ */ new Date()).toISOString() });
     }
     const QUIZ_TITLE = "COALESCE(ci.published->>'title', ci.draft->>'title', a.quiz_id)";
     if (path === "/api/admin/grading/count" && method === "GET") {
@@ -24255,7 +24407,8 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
         FROM quiz_attempts a JOIN users u ON u.id=a.user_id LEFT JOIN users g ON g.id=a.graded_by LEFT JOIN content_items ci ON ci.kind='quiz' AND ci.id=a.quiz_id
         WHERE ${graded ? `a.status='graded' AND a.review LIKE '%"type":"essay"%'` : "a.status='pending'"}
         ORDER BY ${graded ? "a.graded_at DESC NULLS LAST" : "a.created_at ASC"} LIMIT 200`).all();
-      return json({ items: rows.results.map((r) => ({ userId: r.user_id, attemptId: r.attempt_id, quizId: r.quiz_id, quizTitle: r.quiz_title, name: r.name, email: r.email, createdAt: iso5(r.created_at), gradedAt: iso5(r.graded_at), score: r.score, status: r.status, grader: r.grader })) });
+      const tm = await teamsByUser(db);
+      return json({ items: rows.results.map((r) => ({ teams: tm[r.user_id] || [], userId: r.user_id, attemptId: r.attempt_id, quizId: r.quiz_id, quizTitle: r.quiz_title, name: r.name, email: r.email, createdAt: iso5(r.created_at), gradedAt: iso5(r.graded_at), score: r.score, status: r.status, grader: r.grader })) });
     }
     if (m = path.match(/^\/api\/admin\/grading\/([0-9a-f-]{36})\/([0-9a-f-]{36})$/)) {
       const [, uid2, aid] = m;
@@ -24439,10 +24592,21 @@ var ONBOARDING = [
     if exists (select 1 from pg_roles where rolname = 'anon') then execute 'revoke all on app_settings from anon, authenticated'; end if;
   end $$`
 ];
+var TEAMS = [
+  "create table if not exists teams (id text primary key, name text not null, created_at timestamptz not null default now())",
+  "create table if not exists user_teams (user_id uuid not null references users (id) on delete cascade, team_id text not null references teams (id) on delete cascade, primary key (user_id, team_id))",
+  "create index if not exists user_teams_team_idx on user_teams (team_id)",
+  "alter table teams enable row level security",
+  "alter table user_teams enable row level security",
+  `do $$ begin
+    if exists (select 1 from pg_roles where rolname = 'anon') then execute 'revoke all on teams, user_teams from anon, authenticated'; end if;
+  end $$`
+];
 var hasColumn = (table, column) => `SELECT 1 AS x FROM pg_attribute WHERE attrelid = to_regclass('${table}') AND attname = '${column}' AND NOT attisdropped`;
 var MIGRATIONS = [
   { name: "essay & penilaian", check: hasColumn("quiz_attempts", "status"), statements: ESSAY_GRADING },
-  { name: "onboarding", check: hasColumn("users", "onboarding_completed_by") + " AND to_regclass('app_settings') IS NOT NULL", statements: ONBOARDING }
+  { name: "onboarding", check: hasColumn("users", "onboarding_completed_by") + " AND to_regclass('app_settings') IS NOT NULL", statements: ONBOARDING },
+  { name: "tim", check: "SELECT 1 AS x WHERE to_regclass('teams') IS NOT NULL AND to_regclass('user_teams') IS NOT NULL", statements: TEAMS }
 ];
 var checked = /* @__PURE__ */ new WeakMap();
 function ensureSchema(db) {
@@ -24482,7 +24646,7 @@ async function resolveUser(db, verified) {
   }
   return { id: verified.id, name: row.name, email: row.email, role: row.role, status: row.status };
 }
-var VERSION = "3.9.0";
+var VERSION = "4.0.0";
 function createHandler({ getDb, verifyToken, config: config2, admin }) {
   return async function handle2(request) {
     let response;

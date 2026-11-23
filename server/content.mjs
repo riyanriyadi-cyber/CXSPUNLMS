@@ -128,7 +128,9 @@ export function normalize(kind, d, ctx) {
     title: str(d.title, 140, 'Judul'),
     category: str(d.category, 60, 'Kategori'),
     description: str(d.description, 500, 'Deskripsi'),
-    color: pick(d.color, COLORS, 'peach')
+    color: pick(d.color, COLORS, 'peach'),
+    // Audiens: kosong = semua tim; berisi id tim = hanya anggota tim tersebut (quiz yang ditautkan ke course mengikuti course).
+    teams: [...new Set(arr(d.teams, 20, 'Tim').map(t => {if (typeof t !== 'string' || !ID_RE.test(t)) bad('Pilihan tim tidak valid.'); return t;}))]
   };
   if (kind === 'course') {
     const used = new Set();
