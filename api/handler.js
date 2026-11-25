@@ -23519,6 +23519,14 @@ function normalize(kind, d, ctx) {
       docs: docs(d.docs, "Artikel")
     };
   }
+  if (kind === "sop") {
+    return {
+      ...base,
+      active: d.active !== false,
+      sections: arr(d.sections, 40, "Bagian SOP").map((s, j) => section(s, j, "SOP", ctx)),
+      docs: docs(d.docs, "SOP")
+    };
+  }
   bad("Jenis konten tidak dikenal.");
 }
 var filled = (list) => (list || []).filter((x) => x.url || x.ref);
@@ -23528,7 +23536,13 @@ function forPublish(kind, d) {
   };
   need(d.title, "Judul wajib diisi sebelum publish.");
   need(d.category, "Kategori wajib diisi sebelum publish.");
-  need(d.description, "Deskripsi wajib diisi sebelum publish.");
+  if (kind !== "sop") need(d.description, "Deskripsi wajib diisi sebelum publish.");
+  if (kind === "sop") {
+    const list = filled(d.docs);
+    need(d.sections.length || list.length, "SOP butuh minimal 1 slide/dokumen atau 1 bagian tulisan sebelum publish.");
+    d.sections.forEach((s, j) => need(s.heading || hasRichContent(s.html) || s.image || s.video, `Bagian SOP ${j + 1} masih kosong.`));
+    return { ...d, docs: list };
+  }
   if (kind === "course") {
     need(d.lessons.length, "Course butuh minimal 1 modul sebelum publish.");
     d.lessons.forEach((l, i) => {
@@ -23562,10 +23576,10 @@ function slugify(title) {
 // server/catalog.mjs
 var iso = (v) => v instanceof Date ? v.toISOString() : String(v);
 var parseJson = (v) => typeof v === "string" ? JSON.parse(v) : v;
-var LIST = { course: "courses", quiz: "quizzes", article: "articles" };
+var LIST = { course: "courses", quiz: "quizzes", article: "articles", sop: "sops" };
 async function loadCatalog(db) {
   const rows = await sql(db, "SELECT kind,id,published,published_at FROM content_items WHERE published IS NOT NULL ORDER BY sort_order, created_at, id").all();
-  const catalog = { courses: [], quizzes: [], articles: [] };
+  const catalog = { courses: [], quizzes: [], articles: [], sops: [] };
   for (const r of rows.results) catalog[LIST[r.kind]]?.push({ ...parseJson(r.published), id: r.id, version: iso(r.published_at) });
   return catalog;
 }
@@ -23778,7 +23792,8 @@ function scopeCatalog(catalog, teams) {
   return {
     courses: catalog.courses.filter((c) => canSee(c.teams || [], teams)),
     quizzes: catalog.quizzes.filter((q) => canSee(audienceOf(q, "quiz", catalog), teams)),
-    articles: catalog.articles.filter((a) => canSee(a.teams || [], teams))
+    articles: catalog.articles.filter((a) => canSee(a.teams || [], teams)),
+    sops: (catalog.sops || []).filter((x) => canSee(x.teams || [], teams))
   };
 }
 
@@ -23945,7 +23960,9 @@ function safeCatalog(catalog, lock = null) {
   return escapeDeep({
     courses: catalog.courses.map(({ version, ...c }) => openCourse(c.id) ? c : { ...c, locked: true, lessons: c.lessons.map(({ id, title, duration }) => ({ id, title, duration, sections: [] })) }),
     quizzes: catalog.quizzes.map(({ version, ...q }) => openQuiz(q.id) ? { ...q, questions: q.questions.map(({ q: q2, options, type, points }) => ({ q: q2, type: type || "mc", options: type === "essay" ? [] : options, points: points || 1 })) } : { ...q, locked: true, questions: q.questions.map(({ type, points }) => ({ q: "", type: type || "mc", options: [], points: points || 1 })) }),
-    articles: catalog.articles.map(({ version, ...a }) => lock ? { ...a, publishedAt: version, locked: true, sections: [], docs: [] } : { ...a, publishedAt: version })
+    articles: catalog.articles.map(({ version, ...a }) => lock ? { ...a, publishedAt: version, locked: true, sections: [], docs: [] } : { ...a, publishedAt: version }),
+    // SOP tetap terbuka selama onboarding: rujukan kerja, bukan materi belajar.
+    sops: (catalog.sops || []).map(({ version, ...x }) => ({ ...x, publishedAt: version }))
   });
 }
 var LOCKED = "Materi ini terbuka setelah onboarding selesai. Selesaikan dulu course onboarding-mu.";
@@ -24116,7 +24133,8 @@ function summary(row) {
     category: d.category || "",
     teams: d.teams || [],
     course: d.course || "",
-    count: row.kind === "course" ? d.lessons?.length || 0 : row.kind === "quiz" ? d.questions?.length || 0 : d.sections?.length || 0,
+    count: row.kind === "course" ? d.lessons?.length || 0 : row.kind === "quiz" ? d.questions?.length || 0 : row.kind === "sop" ? (d.docs || []).filter((x) => x.url || x.ref).length + (d.sections?.length || 0) : d.sections?.length || 0,
+    active: d.active !== false,
     status: status(row),
     revision: row.revision,
     sortOrder: row.sort_order,
@@ -24184,10 +24202,10 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
       const rows = await sql(db, `SELECT ${CONTENT_COLUMNS} FROM content_items c LEFT JOIN users u ON u.id=c.updated_by ORDER BY c.kind, c.sort_order, c.created_at, c.id`).all();
       return json({ items: rows.results.map(summary) });
     }
-    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article)\/([a-z0-9-]+)$/)) && method === "GET") {
+    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article|sop)\/([a-z0-9-]+)$/)) && method === "GET") {
       return json({ item: full(await getItem(db, m[1], m[2])) });
     }
-    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article)$/)) && method === "POST") {
+    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article|sop)$/)) && method === "POST") {
       const kind = m[1], body = await bodyJSON(request, 512 * 1024);
       const draft = normalize(kind, body.draft || {}, ctx);
       await assertTeams(db, draft.teams);
@@ -24198,13 +24216,13 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
       await sql(db, "INSERT INTO content_items(kind,id,draft,sort_order,updated_by) VALUES(?,?,?::jsonb,?,?)", kind, id, JSON.stringify(draft), Number(order.n), user.id).run();
       return json({ item: full(await getItem(db, kind, id)) }, 201);
     }
-    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article)\/reorder$/)) && method === "POST") {
+    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article|sop)\/reorder$/)) && method === "POST") {
       const body = await bodyJSON(request, 64 * 1024);
       if (!Array.isArray(body.ids) || !body.ids.every((id) => typeof id === "string" && ID_RE.test(id))) fail(422, "Urutan tidak valid.");
       await db.batch(body.ids.map((id, i) => sql(db, "UPDATE content_items SET sort_order=? WHERE kind=? AND id=?", (i + 1) * 10, m[1], id)));
       return json({ ok: true });
     }
-    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article)\/([a-z0-9-]+)(?:\/(publish|unpublish|delete))?$/)) && method === "POST") {
+    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article|sop)\/([a-z0-9-]+)(?:\/(publish|unpublish|delete))?$/)) && method === "POST") {
       const [, kind, id, action] = m;
       const body = await bodyJSON(request, 512 * 1024);
       const row = await getItem(db, kind, id);
@@ -24602,11 +24620,16 @@ var TEAMS = [
     if exists (select 1 from pg_roles where rolname = 'anon') then execute 'revoke all on teams, user_teams from anon, authenticated'; end if;
   end $$`
 ];
+var SOP = [
+  "alter table content_items drop constraint if exists content_items_kind_check",
+  "alter table content_items add constraint content_items_kind_check check (kind in ('course', 'quiz', 'article', 'sop'))"
+];
 var hasColumn = (table, column) => `SELECT 1 AS x FROM pg_attribute WHERE attrelid = to_regclass('${table}') AND attname = '${column}' AND NOT attisdropped`;
 var MIGRATIONS = [
   { name: "essay & penilaian", check: hasColumn("quiz_attempts", "status"), statements: ESSAY_GRADING },
   { name: "onboarding", check: hasColumn("users", "onboarding_completed_by") + " AND to_regclass('app_settings') IS NOT NULL", statements: ONBOARDING },
-  { name: "tim", check: "SELECT 1 AS x WHERE to_regclass('teams') IS NOT NULL AND to_regclass('user_teams') IS NOT NULL", statements: TEAMS }
+  { name: "tim", check: "SELECT 1 AS x WHERE to_regclass('teams') IS NOT NULL AND to_regclass('user_teams') IS NOT NULL", statements: TEAMS },
+  { name: "SOP", check: "SELECT 1 AS x FROM pg_constraint WHERE conrelid = to_regclass('content_items') AND conname = 'content_items_kind_check' AND pg_get_constraintdef(oid) LIKE '%sop%'", statements: SOP }
 ];
 var checked = /* @__PURE__ */ new WeakMap();
 function ensureSchema(db) {
@@ -24646,7 +24669,7 @@ async function resolveUser(db, verified) {
   }
   return { id: verified.id, name: row.name, email: row.email, role: row.role, status: row.status };
 }
-var VERSION = "4.0.0";
+var VERSION = "4.1.0";
 function createHandler({ getDb, verifyToken, config: config2, admin }) {
   return async function handle2(request) {
     let response;

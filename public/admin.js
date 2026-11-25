@@ -18,14 +18,17 @@
   const KIND = {
     course: {label: 'Course', unit: 'modul', icon: '📘', blank: {title: '', category: '', description: '', level: 'Fundamental', color: 'peach', art: 'conversation', lessons: []}},
     quiz: {label: 'Quiz', unit: 'pertanyaan', icon: '📝', blank: {title: '', category: '', description: '', minutes: 5, color: 'peach', course: '', questions: []}},
-    article: {label: 'Artikel', unit: 'bagian', icon: '📄', blank: {title: '', category: '', description: '', minutes: 5, color: 'peach', art: 'conversation', featured: false, sections: []}}
+    article: {label: 'Artikel', unit: 'bagian', icon: '📄', blank: {title: '', category: '', description: '', minutes: 5, color: 'peach', art: 'conversation', featured: false, sections: []}},
+    sop: {label: 'SOP', unit: 'item', icon: '📋', blank: {title: '', category: '', description: '', color: 'peach', active: true, teams: [], docs: [{title: '', url: ''}], sections: []}}
   };
   const COLORS = [['peach', 'Peach'], ['sage', 'Hijau sage'], ['lavender', 'Lavender'], ['blue', 'Biru'], ['sand', 'Pasir'], ['pink', 'Pink']];
   const ARTS = [['conversation', 'Percakapan'], ['listening', 'Mendengarkan'], ['quality', 'Kualitas'], ['journey', 'Perjalanan'], ['documents', 'Dokumen'], ['ownership', 'Ownership'], ['growth', 'Pertumbuhan']];
   const LEVELS = [['Fundamental', 'Fundamental'], ['Intermediate', 'Intermediate'], ['Advanced', 'Advanced']];
   const STATUS = {draft: ['Draft', 'st-draft'], published: ['Tayang', 'st-live'], changed: ['Tayang · ada perubahan', 'st-changed']};
   const USTATUS = {active: ['Aktif', 'st-live'], invited: ['Menunggu aktivasi', 'st-changed'], disabled: ['Nonaktif', 'st-off']};
-  const NAV = [['content/course', 'Course'], ['content/quiz', 'Quiz'], ['content/article', 'Artikel'], ['users', 'Peserta'], ['teams', 'Tim'], ['onboarding', 'Onboarding'], ['scores', 'Nilai Quiz'], ['grading', 'Penilaian'], ['report', 'Laporan']];
+  const NAV = [['content/course', 'Course'], ['content/quiz', 'Quiz'], ['content/article', 'Artikel'], ['content/sop', 'SOP'], ['scores', 'Nilai Quiz'], ['grading', 'Penilaian'], ['people', 'Kelola peserta']];
+  // Halaman di bawah menu "Kelola peserta" (tampil sebagai tab di atas halaman).
+  const PEOPLE = [['users', 'Peserta'], ['teams', 'Tim'], ['onboarding', 'Onboarding'], ['report', 'Laporan']];
   let pendingCount = 0;
 
   let items = [];          // ringkasan konten
@@ -104,9 +107,13 @@
 
   // ---------- routing ----------
   function nav(active) {
-    $('#admin-nav').innerHTML = NAV.map(([h, label]) => `<a class="nav-item ${active === h ? 'active' : ''}" href="#${h}">${label}${h === 'grading' && pendingCount ? `<span class="nav-badge" aria-label="${pendingCount} menunggu penilaian">${pendingCount}</span>` : ''}</a>`).join('');
+    const sub = PEOPLE.find(p => p[0] === active) || (active === 'raport' ? PEOPLE[0] : null), group = sub ? 'people' : active;
+    let tabs = $('#people-tabs');
+    if (!tabs) {tabs = document.createElement('nav'); tabs.id = 'people-tabs'; tabs.setAttribute('aria-label', 'Kelola peserta'); main.before(tabs);}
+    tabs.innerHTML = sub ? `<div class="people-tabs">${PEOPLE.map(([h, label]) => `<a class="people-tab ${sub[0] === h ? 'active' : ''}" href="#${h}" ${sub[0] === h ? 'aria-current="page"' : ''}>${label}</a>`).join('')}</div>` : '';
+    $('#admin-nav').innerHTML = NAV.map(([h, label]) => `<a class="nav-item ${group === h ? 'active' : ''}" href="#${h === 'people' ? 'users' : h}">${label}${h === 'grading' && pendingCount ? `<span class="nav-badge" aria-label="${pendingCount} menunggu penilaian">${pendingCount}</span>` : ''}</a>`).join('');
     navActive = active;
-    $('#breadcrumb').textContent = 'Admin · ' + (NAV.find(n => n[0] === active)?.[1] || 'Editor');
+    $('#breadcrumb').textContent = 'Admin · ' + (sub ? `Kelola peserta · ${active === 'raport' ? 'Raport' : sub[1]}` : NAV.find(n => n[0] === active)?.[1] || 'Editor');
   }
   let navActive = '';
   async function refreshPending() {try {const {pending} = await api.get('/api/admin/grading/count'); if (pending !== pendingCount) {pendingCount = pending; const t = $('#breadcrumb').textContent; nav(navActive); $('#breadcrumb').textContent = t;}} catch {}}
@@ -116,9 +123,10 @@
     destroyRtes();
     $('#sidebar').classList.remove('open'); $('#mobile-scrim').classList.remove('visible');
     try {
+      if (page === 'people') {location.replace('#users'); return;}
       if (page === 'edit' && KIND[a] && b) {nav('content/' + a); await openEditor(a, b);}
       else if (page === 'users') {editor = null; nav('users'); await renderUsers();}
-      else if (page === 'raport' && a) {editor = null; nav('users'); await renderAdminRaport(a);}
+      else if (page === 'raport' && a) {editor = null; nav('raport'); await renderAdminRaport(a);}
       else if (page === 'scores') {editor = null; nav('scores'); await (a ? renderQuizScores(decodeURIComponent(a)) : renderScores());}
       else if (page === 'teams') {editor = null; nav('teams'); await renderTeams();}
       else if (page === 'onboarding') {editor = null; nav('onboarding'); await renderOnboarding();}
@@ -151,7 +159,7 @@
         <td class="col-order"><button class="mini" data-act="move-item" data-id="${esc(it.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="Naikkan">↑</button><button class="mini" data-act="move-item" data-id="${esc(it.id)}" data-dir="1" ${i === list.length - 1 ? 'disabled' : ''} aria-label="Turunkan">↓</button></td>
         <td><a class="row-title" href="#edit/${kind}/${esc(it.id)}">${esc(it.title)}</a><small>${esc(it.category || 'Tanpa kategori')}</small><div class="team-chips">${kind === 'quiz' && it.course ? teamChips(items.find(c => c.kind === 'course' && c.id === it.course)?.teams || [], '') : teamChips(it.teams, '')}</div></td>
         <td>${it.count} ${K.unit}</td>
-        <td>${badge(STATUS[it.status])}</td>
+        <td>${badge(STATUS[it.status])}${it.kind === 'sop' && it.active === false ? ' ' + badge(['Tidak berlaku', 'st-late']) : ''}</td>
         <td><span class="when">${fmtDate(it.updatedAt)}</span>${it.updatedBy ? `<small>oleh ${esc(it.updatedBy)}</small>` : ''}</td>
         <td class="col-actions"><a class="btn btn-outline" href="#edit/${kind}/${esc(it.id)}">Edit</a>
           ${it.status !== 'published' ? `<button class="btn btn-subtle" data-act="publish-item" data-kind="${kind}" data-id="${esc(it.id)}">Publish</button>` : ''}
@@ -205,10 +213,10 @@
     return /\.pdf$/i.test(p) ? 'pdf' : 'link';
   }
   const docHint = url => {if (!url) return 'Tempel link Google Docs, Sheets, Slides, file/folder Drive, atau PDF.'; const k = docKind(url); return k ? `Terdeteksi: ${DOC_LABEL[k]}${['doc', 'sheet', 'slides', 'form', 'drive', 'folder'].includes(k) ? ' ✓ bisa dipratinjau' : ' · dibuka di tab baru'}` : 'Link harus diawali https://';};
-  function docsEditor(base) {
+  function docsEditor(base, opt = {}) {
     const list = val(base) || [];
     const opts = [['', 'Pilih artikel atau course…'], ...items.filter(i => i.kind === 'article').map(i => ['article:' + i.id, 'Artikel · ' + i.title]), ...items.filter(i => i.kind === 'course' && !(editor.kind === 'course' && i.id === editor.id)).map(i => ['course:' + i.id, 'Course · ' + i.title])];
-    return `<div class="ed-docs"><h4 class="ed-subhead">Dokumen terkait <small>opsional · tampil sebagai kartu di bawah isi</small></h4>
+    return `<div class="ed-docs"><h4 class="ed-subhead">${opt.title || 'Dokumen terkait <small>opsional · tampil sebagai kartu di bawah isi</small>'}</h4>
       ${list.map((x, j) => {const p = `${base}.${j}`, internal = x.ref !== undefined;
         return `<div class="ed-doc">${internal ? fSelect('Artikel / course LMS', `${p}.ref`, opts, {cls: 'span-2'}) : `<label class="span-2">Link<input type="url" data-f="${p}.url" data-doc-url value="${esc(x.url || '')}" maxlength="1000" placeholder="https://docs.google.com/…" /><small class="doc-detect">${esc(docHint(x.url))}</small></label>`}
         ${fInput('Judul (opsional)', `${p}.title`, {max: 160, ph: internal ? 'Pakai judul artikel/course' : 'Contoh: SOP Verifikasi Dokumen'})}
@@ -271,6 +279,11 @@
       const courses = items.filter(i => i.kind === 'course');
       body = `<section class="ed-card"><h2>Informasi quiz</h2><div class="form-grid">${fInput('Judul', 'title', {max: 140, cls: 'span-2'})}${fInput('Kategori', 'category', {max: 60, list: 'cat-list'})}${fInput('Estimasi (menit)', 'minutes', {num: true})}${fSelect('Warna kartu', 'color', COLORS)}${fSelect('Course terkait', 'course', [['', '— Tidak ada —'], ...courses.map(c => [c.id, c.title + (c.status === 'draft' ? ' (belum tayang)' : '')])], {rerender: true})}</div>${fText('Deskripsi', 'description', {rows: 2, max: 500})}${audienceField(kind, d)}${catList()}<p class="ed-note">Nilai lulus latihan: 80. Peserta bisa mengulang tanpa batas.</p></section>
         <section class="ed-card"><div class="ed-card-head"><h2>Pertanyaan <span class="count">${d.questions.length}</span></h2></div>${d.questions.map((q, i) => questionCard(q, i, d.questions.length)).join('')}<button type="button" class="btn btn-subtle" data-act="add-question">+ Pilihan ganda</button> <button type="button" class="btn btn-subtle" data-act="add-question" data-type="essay">+ Essay</button></section>`;
+    } else if (kind === 'sop') {
+      body = `<section class="ed-card"><h2>Informasi SOP</h2><div class="form-grid">${fInput('Judul', 'title', {max: 140, cls: 'span-2'})}${fInput('Kategori', 'category', {max: 60, list: 'cat-list', ph: 'mis. Pengajuan, Dokumen, Komplain, Refund'})}</div>${fText('Ringkasan (opsional)', 'description', {rows: 2, max: 500})}
+        <label class="check"><input type="checkbox" data-f="active" data-bool ${d.active !== false ? 'checked' : ''} /> SOP ini masih berlaku <small class="hint">(hapus centang untuk menandai <b>Tidak berlaku</b>; SOP tetap bisa dibuka sebagai arsip dengan peringatan)</small></label>${audienceField(kind, d)}${catList()}</section>
+        <section class="ed-card"><div class="ed-card-head"><h2>Slide & dokumen SOP</h2><small>Dokumen pertama tampil besar di halaman SOP; sisanya jadi kartu di bawahnya.</small></div>${docsEditor('docs', {title: 'Tempel link Google Slides / Docs / Drive / PDF'})}</section>
+        <section class="ed-card"><div class="ed-card-head"><h2>Tulisan SOP <small class="hint">opsional</small></h2><small>Tulis langkah-langkah langsung di LMS bila tidak memakai slide, atau sebagai ringkasan di bawah slide.</small></div>${sectionsEditor('sections')}</section>`;
     } else {
       body = `<section class="ed-card"><h2>Informasi artikel</h2><div class="form-grid">${fInput('Judul', 'title', {max: 140, cls: 'span-2'})}${fInput('Kategori / topik', 'category', {max: 60, list: 'cat-list'})}${fInput('Estimasi baca (menit)', 'minutes', {num: true})}${fSelect('Warna kartu', 'color', COLORS)}${fSelect('Ilustrasi', 'art', ARTS)}</div>${fText('Ringkasan pembuka', 'description', {rows: 2, max: 500})}
         <label class="check"><input type="checkbox" data-f="featured" data-bool ${d.featured ? 'checked' : ''} /> Jadikan Editor's Pick di Knowledge Center</label>${audienceField(kind, d)}${catList()}</section>

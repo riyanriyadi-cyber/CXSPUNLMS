@@ -296,3 +296,10 @@ a.sc:hover{outline:2px solid #f7c9a6}
 .onb-course-pick label.disabled{opacity:.6;cursor:not-allowed}
 .onb-course-pick .team-chips{margin-top:5px}
 .onb-scope+.hint{margin:8px 0 12px!important}
+/* ---- v4.1: Kelola peserta ---- */
+#people-tabs:empty{display:none}
+.people-tabs{display:flex;gap:4px;padding:14px 36px 0;border-bottom:1px solid #e9ece4;background:#fff;overflow-x:auto}
+.people-tab{padding:10px 16px;font-size:13px;font-weight:600;color:#6b7568;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.people-tab:hover{color:#1f2b25}
+.people-tab.active{color:#1f2b25;border-color:#e8732a}
+@media (max-width:720px){.people-tabs{padding:8px 12px 0}}

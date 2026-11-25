@@ -23,7 +23,7 @@ async function resolveUser(db, verified) {
 }
 
 import {ensureSchema} from './schema.mjs';
-export const VERSION = '4.0.0';
+export const VERSION = '4.1.0';
 
 export function createHandler({getDb, verifyToken, config, admin}) {
   return async function handle(request) {

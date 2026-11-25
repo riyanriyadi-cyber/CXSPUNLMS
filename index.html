@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#ff7623" />
+  <meta name="description" content="SPUN Learning Hub — ruang untuk belajar, mengembangkan kemampuan, dan bertumbuh bersama." />
+  <title>SPUN Learning Hub</title>
+  <link rel="icon" type="image/png" href="assets/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="auth.js" defer></script>
+  <script src="raport.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body class="is-loading">
+  <div id="auth-overlay" class="auth-overlay"><div class="auth-card"><img src="assets/spun-logo.png" alt="SPUN" /><h1>Menyiapkan ruang belajarmu…</h1><p>Menghubungkan akun dan progres pembelajaran.</p></div></div>
+  <a class="skip-link" href="#main">Lewati ke konten</a>
+  <div class="mobile-scrim" id="mobile-scrim"></div>
+  <aside class="sidebar" id="sidebar" aria-label="Navigasi utama">
+    <a href="#dashboard" class="brand" aria-label="SPUN Learning Hub — Dashboard">
+      <img src="assets/spun-logo.png" alt="SPUN" width="103" height="31" />
+      <span>Learning Hub<span class="brand-dot">.</span></span>
+    </a>
+    <div class="workspace-label">YOUR LEARNING SPACE</div>
+    <nav id="main-nav"></nav>
+    <div class="sidebar-bottom">
+      <div class="help-card">
+        <div class="help-art" aria-hidden="true">✦<span>✧</span></div>
+        <strong>Small steps. Big growth.</strong>
+        <p>Selalu ada hal baru<br>untuk dipelajari hari ini.</p>
+        <button class="help-link" data-action="help">Panduan Learning Hub <span>↗</span></button>
+      </div>
+      <button class="sidebar-profile" data-action="profile">
+        <span class="avatar">LH<span></span></span>
+        <span class="profile-text"><strong>Learner</strong><small>SPUN Learning Hub</small></span>
+        <span class="profile-dots">···</span>
+      </button>
+    </div>
+  </aside>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-title"><button class="icon-button mobile-toggle" data-action="menu" aria-label="Buka navigasi"></button><span id="breadcrumb">Dashboard</span><span class="demo-badge" id="sync-status">Terhubung</span></div>
+      <div class="topbar-tools">
+        <form id="global-search-form" class="global-search" role="search"><button type="button" id="search-icon" aria-label="Buka pencarian"></button><input id="global-search" aria-label="Cari course, quiz, atau artikel" placeholder="Cari sesuatu untuk dipelajari…" autocomplete="off" /><kbd>/</kbd></form>
+        <div class="topbar-divider"></div>
+        <button class="icon-button notification-button" data-action="notifications" aria-label="Buka notifikasi"><span id="bell-icon"></span><i></i></button>
+        <button class="avatar topbar-avatar" data-action="profile" aria-label="Buka profil">LH</button>
+      </div>
+    </header>
+    <main id="main" tabindex="-1"></main>
+    <footer class="footer"><span>© <span id="year"></span> SPUN Learning Hub</span><span>Made for curious minds. <span class="footer-star">✦</span></span></footer>
+  </div>
+  <dialog id="modal" aria-labelledby="modal-title"><div id="modal-content"></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

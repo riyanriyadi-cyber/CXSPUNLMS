@@ -22,7 +22,7 @@ function summary(row) {
   const d = parseJson(row.draft);
   return {
     kind: row.kind, id: row.id, title: d.title || '(tanpa judul)', category: d.category || '', teams: d.teams || [], course: d.course || '',
-    count: row.kind === 'course' ? d.lessons?.length || 0 : row.kind === 'quiz' ? d.questions?.length || 0 : d.sections?.length || 0,
+    count: row.kind === 'course' ? d.lessons?.length || 0 : row.kind === 'quiz' ? d.questions?.length || 0 : row.kind === 'sop' ? (d.docs || []).filter(x => x.url || x.ref).length + (d.sections?.length || 0) : d.sections?.length || 0, active: d.active !== false,
     status: status(row), revision: row.revision, sortOrder: row.sort_order,
     updatedAt: iso(row.updated_at), publishedAt: iso(row.published_at), updatedBy: row.updated_by_name || null
   };
@@ -88,10 +88,10 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
       const rows = await sql(db, `SELECT ${CONTENT_COLUMNS} FROM content_items c LEFT JOIN users u ON u.id=c.updated_by ORDER BY c.kind, c.sort_order, c.created_at, c.id`).all();
       return json({items: rows.results.map(summary)});
     }
-    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article)\/([a-z0-9-]+)$/)) && method === 'GET') {
+    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article|sop)\/([a-z0-9-]+)$/)) && method === 'GET') {
       return json({item: full(await getItem(db, m[1], m[2]))});
     }
-    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article)$/)) && method === 'POST') {
+    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article|sop)$/)) && method === 'POST') {
       const kind = m[1], body = await bodyJSON(request, 512 * 1024);
       const draft = normalize(kind, body.draft || {}, ctx);
       await assertTeams(db, draft.teams);
@@ -102,13 +102,13 @@ export async function adminApi(request, {db, user, origin, config, admin}) {
       await sql(db, 'INSERT INTO content_items(kind,id,draft,sort_order,updated_by) VALUES(?,?,?::jsonb,?,?)', kind, id, JSON.stringify(draft), Number(order.n), user.id).run();
       return json({item: full(await getItem(db, kind, id))}, 201);
     }
-    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article)\/reorder$/)) && method === 'POST') {
+    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article|sop)\/reorder$/)) && method === 'POST') {
       const body = await bodyJSON(request, 64 * 1024);
       if (!Array.isArray(body.ids) || !body.ids.every(id => typeof id === 'string' && ID_RE.test(id))) fail(422, 'Urutan tidak valid.');
       await db.batch(body.ids.map((id, i) => sql(db, 'UPDATE content_items SET sort_order=? WHERE kind=? AND id=?', (i + 1) * 10, m[1], id)));
       return json({ok: true});
     }
-    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article)\/([a-z0-9-]+)(?:\/(publish|unpublish|delete))?$/)) && method === 'POST') {
+    if ((m = path.match(/^\/api\/admin\/content\/(course|quiz|article|sop)\/([a-z0-9-]+)(?:\/(publish|unpublish|delete))?$/)) && method === 'POST') {
       const [, kind, id, action] = m;
       const body = await bodyJSON(request, 512 * 1024);
       const row = await getItem(db, kind, id);

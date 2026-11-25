@@ -3,7 +3,7 @@
 import {HttpError} from './http.mjs';
 import {sanitizeRich, plainToHtml, hasRichContent} from './rich.mjs';
 
-export const KINDS = ['course', 'quiz', 'article'];
+export const KINDS = ['course', 'quiz', 'article', 'sop'];
 export const COLORS = ['peach', 'sage', 'lavender', 'blue', 'sand', 'pink'];
 export const ARTS = ['conversation', 'listening', 'quality', 'journey', 'documents', 'ownership', 'growth'];
 export const LEVELS = ['Fundamental', 'Intermediate', 'Advanced'];
@@ -171,6 +171,15 @@ export function normalize(kind, d, ctx) {
       docs: docs(d.docs, 'Artikel')
     };
   }
+  if (kind === 'sop') {
+    // SOP: rujukan kerja. Bisa berupa slide/dokumen Google (docs) dan/atau tulisan di LMS (sections).
+    return {
+      ...base,
+      active: d.active !== false,
+      sections: arr(d.sections, 40, 'Bagian SOP').map((s, j) => section(s, j, 'SOP', ctx)),
+      docs: docs(d.docs, 'SOP')
+    };
+  }
   bad('Jenis konten tidak dikenal.');
 }
 
@@ -182,7 +191,13 @@ export function forPublish(kind, d) {
   const need = (cond, msg) => {if (!cond) bad(msg);};
   need(d.title, 'Judul wajib diisi sebelum publish.');
   need(d.category, 'Kategori wajib diisi sebelum publish.');
-  need(d.description, 'Deskripsi wajib diisi sebelum publish.');
+  if (kind !== 'sop') need(d.description, 'Deskripsi wajib diisi sebelum publish.');
+  if (kind === 'sop') {
+    const list = filled(d.docs);
+    need(d.sections.length || list.length, 'SOP butuh minimal 1 slide/dokumen atau 1 bagian tulisan sebelum publish.');
+    d.sections.forEach((s, j) => need(s.heading || hasRichContent(s.html) || s.image || s.video, `Bagian SOP ${j + 1} masih kosong.`));
+    return {...d, docs: list};
+  }
   if (kind === 'course') {
     need(d.lessons.length, 'Course butuh minimal 1 modul sebelum publish.');
     d.lessons.forEach((l, i) => {

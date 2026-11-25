@@ -103,6 +103,8 @@ Onboarding (peserta): `state.onboarding = {required, status, active, startedAt, 
 | POST | /api/admin/users/:id/teams | `{teams: [teamId...]}` |
 | GET | /api/admin/report?team=<id> | laporan hanya untuk anggota & materi tim itu |
 
+SOP: jenis konten `sop` di semua endpoint `/api/admin/content/...`; draft `{title, category, description?, active, teams, docs, sections}`; publish butuh minimal 1 dokumen atau 1 bagian. `/api/catalog` mengembalikan `sops` (disaring per tim, tidak terkunci onboarding).
+
 Tim: setiap materi punya `teams` (kosong = semua tim; quiz dengan `course` mengikuti course). Peserta hanya menerima materi yang cocok; admin menerima semua. Undangan menerima `teams`. Onboarding: `{courses, byTeam: {teamId: [courseId]}, days}`.
 
 Dokumen terkait (artikel `docs`, modul `lessons[].docs`, maks. 20): kirim `{title, url}` atau `{title, ref: "article:<id>" | "course:<id>"}`; server menyimpan `type` (`doc`, `sheet`, `slides`, `form`, `drive`, `folder`, `pdf`, `link`, `article`, `course`) dan `preview` (URL pratinjau, hanya untuk docs.google.com/drive.google.com). Baris tanpa link tidak ikut tayang.

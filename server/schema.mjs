@@ -41,12 +41,18 @@ const TEAMS = [
   end $$`
 ];
 
+const SOP = [
+  'alter table content_items drop constraint if exists content_items_kind_check',
+  "alter table content_items add constraint content_items_kind_check check (kind in ('course', 'quiz', 'article', 'sop'))"
+];
+
 // Cek kolom pada tabel yang benar-benar dipakai query aplikasi (mengikuti search_path, tidak harus schema public).
 const hasColumn = (table, column) => `SELECT 1 AS x FROM pg_attribute WHERE attrelid = to_regclass('${table}') AND attname = '${column}' AND NOT attisdropped`;
 const MIGRATIONS = [
   {name: 'essay & penilaian', check: hasColumn('quiz_attempts', 'status'), statements: ESSAY_GRADING},
   {name: 'onboarding', check: hasColumn('users', 'onboarding_completed_by') + " AND to_regclass('app_settings') IS NOT NULL", statements: ONBOARDING},
-  {name: 'tim', check: "SELECT 1 AS x WHERE to_regclass('teams') IS NOT NULL AND to_regclass('user_teams') IS NOT NULL", statements: TEAMS}
+  {name: 'tim', check: "SELECT 1 AS x WHERE to_regclass('teams') IS NOT NULL AND to_regclass('user_teams') IS NOT NULL", statements: TEAMS},
+  {name: 'SOP', check: "SELECT 1 AS x FROM pg_constraint WHERE conrelid = to_regclass('content_items') AND conname = 'content_items_kind_check' AND pg_get_constraintdef(oid) LIKE '%sop%'", statements: SOP}
 ];
 
 const checked = new WeakMap();

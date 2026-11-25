@@ -21,7 +21,9 @@ export function safeCatalog(catalog, lock = null) {
     quizzes: catalog.quizzes.map(({version, ...q}) => openQuiz(q.id)
       ? {...q, questions: q.questions.map(({q, options, type, points}) => ({q, type: type || 'mc', options: type === 'essay' ? [] : options, points: points || 1}))}
       : {...q, locked: true, questions: q.questions.map(({type, points}) => ({q: '', type: type || 'mc', options: [], points: points || 1}))}),
-    articles: catalog.articles.map(({version, ...a}) => lock ? {...a, publishedAt: version, locked: true, sections: [], docs: []} : {...a, publishedAt: version})
+    articles: catalog.articles.map(({version, ...a}) => lock ? {...a, publishedAt: version, locked: true, sections: [], docs: []} : {...a, publishedAt: version}),
+    // SOP tetap terbuka selama onboarding: rujukan kerja, bukan materi belajar.
+    sops: (catalog.sops || []).map(({version, ...x}) => ({...x, publishedAt: version}))
   });
 }
 const LOCKED = 'Materi ini terbuka setelah onboarding selesai. Selesaikan dulu course onboarding-mu.';

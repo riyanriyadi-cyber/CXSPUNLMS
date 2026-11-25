@@ -98,6 +98,7 @@ export function scopeCatalog(catalog, teams) {
   return {
     courses: catalog.courses.filter(c => canSee(c.teams || [], teams)),
     quizzes: catalog.quizzes.filter(q => canSee(audienceOf(q, 'quiz', catalog), teams)),
-    articles: catalog.articles.filter(a => canSee(a.teams || [], teams))
+    articles: catalog.articles.filter(a => canSee(a.teams || [], teams)),
+    sops: (catalog.sops || []).filter(x => canSee(x.teams || [], teams))
   };
 }
