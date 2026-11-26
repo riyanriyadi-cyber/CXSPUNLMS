@@ -24574,7 +24574,7 @@ async function adminApi(request, { db, user, origin, config: config2, admin }) {
 }
 
 // server/headers.mjs
-var csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.supabase.co; frame-src https://www.youtube-nocookie.com https://docs.google.com https://drive.google.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co; form-action 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'";
+var csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.supabase.co; frame-src https://www.youtube-nocookie.com https://docs.google.com https://drive.google.com https://accounts.google.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co; form-action 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'";
 var securityHeaders = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
@@ -24669,7 +24669,7 @@ async function resolveUser(db, verified) {
   }
   return { id: verified.id, name: row.name, email: row.email, role: row.role, status: row.status };
 }
-var VERSION = "4.1.0";
+var VERSION = "4.1.1";
 function createHandler({ getDb, verifyToken, config: config2, admin }) {
   return async function handle2(request) {
     let response;

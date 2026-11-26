@@ -303,3 +303,12 @@ a.sc:hover{outline:2px solid #f7c9a6}
 .people-tab:hover{color:#1f2b25}
 .people-tab.active{color:#1f2b25;border-color:#e8732a}
 @media (max-width:720px){.people-tabs{padding:8px 12px 0}}
+/* ---- v4.2: menu aksi peserta ---- */
+.row-actions{display:flex;gap:6px;justify-content:flex-end;align-items:center}
+.more-menu{position:relative}
+.more-menu>summary{list-style:none;cursor:pointer;min-width:40px;justify-content:center;font-weight:700;letter-spacing:.08em}
+.more-menu>summary::-webkit-details-marker{display:none}
+.more-list{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:210px;background:#fff;border:1px solid #e3e7dd;border-radius:12px;box-shadow:0 12px 32px rgba(31,43,37,.14);padding:6px;display:grid}
+.more-list button{text-align:left;background:none;border:0;border-radius:8px;padding:9px 12px;font:inherit;font-size:13px;color:#1f2b25;cursor:pointer}
+.more-list button:hover,.more-list button:focus-visible{background:#f6f7f3}
+.more-list button.danger{color:#b0412b}

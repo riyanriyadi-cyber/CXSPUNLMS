@@ -432,12 +432,21 @@
         <td>${u.role === 'admin' ? '<span class="team-chip all">Semua materi</span>' : teamChips(u.teams, 'Belum ada tim')}<button class="mini-link" data-act="user-teams" data-id="${u.id}">Atur tim</button></td>
         <td>${u.role === 'admin' ? badge(['Admin', 'st-admin']) : 'Peserta'}</td><td>${badge(USTATUS[u.status])}${u.onboarding && u.onboarding !== 'completed' ? `<a class="onb-mini" href="#onboarding">Onboarding · ${OSTATUS[u.onboarding][0]}</a>` : ''}</td>
         <td>${u.lessonsCompleted} modul · ${u.quizzesPassed} quiz lulus</td><td><span class="when">${fmtDate(u.lastActivity || u.lastSignInAt)}</span></td>
-        <td class="col-actions"><a class="btn btn-outline" href="#raport/${u.id}">Raport</a>${self ? '' : `
-          ${u.status === 'invited' ? `<button class="btn btn-outline" data-act="resend" data-id="${u.id}">Kirim ulang undangan</button>` : ''}
-          <button class="btn btn-outline" data-act="set-role" data-id="${u.id}" data-role="${u.role === 'admin' ? 'learner' : 'admin'}">${u.role === 'admin' ? 'Jadikan peserta' : 'Jadikan admin'}</button>
-          <button class="btn btn-outline ${u.status === 'disabled' ? '' : 'btn-danger-text'}" data-act="set-status" data-id="${u.id}" data-status="${u.status === 'disabled' ? 'active' : 'disabled'}">${u.status === 'disabled' ? 'Aktifkan' : 'Nonaktifkan'}</button>`}</td></tr>`;
+        <td class="col-actions"><div class="row-actions"><a class="btn btn-outline" href="#raport/${u.id}">Raport</a>${self ? '' : `<details class="more-menu"><summary class="btn btn-outline" aria-label="Aksi lain untuk ${esc(u.name)}">⋯</summary><div class="more-list" role="menu">
+          ${u.status === 'invited' ? `<button role="menuitem" data-act="resend" data-id="${u.id}">Kirim ulang undangan</button>` : ''}
+          <button role="menuitem" data-act="set-role" data-id="${u.id}" data-role="${u.role === 'admin' ? 'learner' : 'admin'}">${u.role === 'admin' ? 'Jadikan peserta' : 'Jadikan admin'}</button>
+          <button role="menuitem" class="${u.status === 'disabled' ? '' : 'danger'}" data-act="set-status" data-id="${u.id}" data-status="${u.status === 'disabled' ? 'active' : 'disabled'}">${u.status === 'disabled' ? 'Aktifkan akun' : 'Nonaktifkan akun'}</button></div></details>`}</div></td></tr>`;
     }).join('') || '<tr><td colspan="7" class="empty-row">Tidak ada peserta yang cocok.</td></tr>';
   }
+  // Menu aksi memakai posisi fixed agar tidak terpotong oleh tabel yang bisa digeser.
+  document.addEventListener('toggle', e => {
+    const d = e.target; if (!d.classList?.contains('more-menu') || !d.open) return;
+    const r = d.querySelector('summary').getBoundingClientRect(), m = d.querySelector('.more-list');
+    m.style.position = 'fixed'; m.style.right = Math.max(8, innerWidth - r.right) + 'px';
+    const h = m.offsetHeight; m.style.top = (r.bottom + 6 + h > innerHeight ? Math.max(8, r.top - 6 - h) : r.bottom + 6) + 'px';
+  }, true);
+  window.addEventListener('scroll', () => document.querySelectorAll('details.more-menu[open]').forEach(d => {d.open = false;}), true);
+  document.addEventListener('click', e => {document.querySelectorAll('details.more-menu[open]').forEach(d => {if (!d.contains(e.target) || e.target.closest('.more-list button')) d.open = false;});});
   main.addEventListener('input', e => {if (e.target.id === 'user-search') {userQuery = e.target.value; renderUserRows();}});
   main.addEventListener('change', e => {if (e.target.id === 'user-team') {userTeam = e.target.value; renderUserRows();} else if (e.target.id === 'report-team') {reportTeam = e.target.value; renderReport().catch(err => toast(err.message, true));} else if (e.target.id === 'grading-team') {gradingTeam = e.target.value; renderGrading(gradingTab);}});
   main.addEventListener('change', e => {
@@ -970,9 +979,9 @@
   (async () => {
     try {
       const r = await fetch('/', {cache: 'no-store'}), c = r.headers.get('content-security-policy') || '';
-      if (!c || /frame-src[^;]*docs\.google\.com[^;]*drive\.google\.com|frame-src[^;]*drive\.google\.com[^;]*docs\.google\.com/.test(c)) return;
+      const fs = (c.match(/frame-src[^;]*/) || [''])[0]; if (!c || ['docs.google.com', 'drive.google.com', 'accounts.google.com'].every(h => fs.includes(h))) return;
       const w = document.createElement('div'); w.className = 'sys-warn'; w.setAttribute('role', 'alert');
-      w.innerHTML = '<b>Pratinjau dokumen Google belum aktif.</b> File <code>vercel.json</code> yang terpasang di Vercel masih versi lama, jadi peserta melihat "This content is blocked". Upload ulang <code>vercel.json</code> dari ZIP terbaru ke GitHub, tunggu deploy selesai, lalu muat ulang halaman ini. Sementara itu peserta tetap bisa membuka dokumen di tab baru.';
+      w.innerHTML = '<b>Pratinjau dokumen Google belum aktif sepenuhnya.</b> File <code>vercel.json</code> yang terpasang di Vercel masih versi lama (frame-src belum memuat docs.google.com, drive.google.com, dan accounts.google.com), jadi sebagian peserta melihat "This content is blocked" atau diminta membuka di tab baru. Upload ulang <code>vercel.json</code> dari ZIP terbaru ke GitHub, tunggu deploy selesai, lalu muat ulang halaman ini. Sementara itu peserta tetap bisa membuka dokumen di tab baru.';
       main.before(w);
     } catch {}
   })();

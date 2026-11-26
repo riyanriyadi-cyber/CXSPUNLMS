@@ -57,6 +57,10 @@ Keamanan: HTML dari editor disaring ketat di server (`server/rich.mjs`, daftar i
 | `supabase/seed/catalog.json` | Materi contoh awal (sudah dimasukkan oleh migrasi 2) |
 | `tests/` | Uji API peserta & admin (Postgres in-memory) |
 
+## Upgrade ke v4.1.1
+
+Upload isi ZIP termasuk `vercel.json` (frame-src kini juga `https://accounts.google.com`, agar slide/dokumen Google tetap tampil di browser yang login ke akun Google). Cek `"version":"4.1.1"`. Aksi peserta di tabel Peserta dipindah ke menu ⋯.
+
 ## Upgrade ke v4.1 (SOP & Kelola peserta)
 
 Upload isi ZIP, tunggu deploy, cek `"version":"4.1.0"`. Jenis konten SOP diaktifkan **otomatis** di database (referensi: `supabase/migrations/20261125000000_sop.sql`).
